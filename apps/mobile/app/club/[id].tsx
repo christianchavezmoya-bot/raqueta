@@ -50,7 +50,7 @@ export default function ClubDetailScreen() {
   const { data: availability } = useQuery({
     queryKey: ['availability', selectedCourt, selectedDate],
     queryFn: async () => {
-      const { data } = await api.get(`/courts/${selectedCourt}/availability?date=${selectedDate}`);
+      const { data } = await api.get(`/clubs/${id}/availability?courtId=${selectedCourt}&date=${selectedDate}`);
       return data;
     },
     enabled: !!selectedCourt && !!selectedDate,

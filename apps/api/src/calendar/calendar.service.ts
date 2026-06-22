@@ -43,6 +43,37 @@ export class CalendarService {
     };
   }
 
+  async getClubWeekCalendar(clubId: string, from?: Date, to?: Date) {
+    const start = from ?? new Date();
+    const end = to ?? new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const [reservations, matches, blocks] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: { clubId, startTime: { gte: start, lte: end } },
+        include: {
+          court: true,
+          user: { select: { id: true, email: true, playerProfile: true } },
+        },
+        orderBy: { startTime: 'asc' },
+      }),
+      this.prisma.match.findMany({
+        where: { tournament: { clubId }, scheduledTime: { gte: start, lte: end } },
+        include: {
+          playerOne: { select: { id: true, playerProfile: true } },
+          playerTwo: { select: { id: true, playerProfile: true } },
+          court: true,
+        },
+        orderBy: { scheduledTime: 'asc' },
+      }),
+      this.prisma.courtBlock.findMany({
+        where: { court: { clubId }, startTime: { lte: end }, endTime: { gte: start } },
+        include: { court: true },
+      }),
+    ]);
+
+    return { reservations, matches, blocks };
+  }
+
   async getClubCalendar(clubId: string, date?: Date) {
     const day = date ?? new Date();
     const start = new Date(day.setHours(0, 0, 0, 0));

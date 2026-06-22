@@ -26,6 +26,22 @@ export class CalendarController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('club/:clubId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get club week calendar' })
+  getClubWeekCalendar(
+    @Param('clubId') clubId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.calendarService.getClubWeekCalendar(
+      clubId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('club/:clubId/day')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get club day calendar' })

@@ -1,7 +1,10 @@
 import { Controller, Get, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -22,6 +25,24 @@ export class PlayersController {
     @Query('search') search?: string,
   ) {
     return this.playersService.findAll(+page, +limit, search);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION)
+  @Get(':id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get player detail (admin)' })
+  findById(@Param('id') id: string) {
+    return this.playersService.findById(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Patch(':id/role')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update player role' })
+  updateRole(@Param('id') id: string, @Body('role') role: string) {
+    return this.playersService.updateRole(id, role);
   }
 
   @Public()

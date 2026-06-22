@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -40,6 +40,26 @@ export class PlayersService {
     const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundException('Profile not found');
     return this.prisma.playerProfile.update({ where: { userId }, data });
+  }
+
+  async findById(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { playerProfile: { include: { stats: true, homeClub: { include: { profile: true } } } } },
+    });
+    if (!user) throw new NotFoundException('Player not found');
+    const { passwordHash, ...safe } = user;
+    return safe;
+  }
+
+  async updateRole(userId: string, role: string) {
+    const allowed = ['PLAYER', 'MEMBER', 'CASUAL_USER'];
+    if (!allowed.includes(role)) throw new ForbiddenException('Cannot assign this role');
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role: role as any },
+      select: { id: true, email: true, role: true },
+    });
   }
 
   async getStats(userId: string) {

@@ -64,6 +64,19 @@ export class ReservationsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION)
+  @Get('users/:userId/reservations')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get reservations by user ID (admin)' })
+  getByUserId(
+    @Param('userId') userId: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    return this.reservationsService.findByUser(userId, +page, +limit);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION)
   @Get('clubs/:clubId/reservations')
   @ApiBearerAuth()
   findByClub(
