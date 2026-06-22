@@ -160,7 +160,7 @@ model User {
   payments          Payment[]       @relation("UserPayments")
   confirmedPayments Payment[]       @relation("ConfirmedPayments")
   notifications     Notification[]
-  instructorProfile Instructor?
+  instructorProfiles Instructor[]
   ownedClubs        Club[]
   auditLogs         AuditLog[]      @relation("ActorLogs")
   refreshTokens     RefreshToken[]
@@ -393,7 +393,7 @@ model Instructor {
   active          Boolean @default(true)
 
   club         Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  user         User?                   @relation(fields: [userId], references: [id])
+  user         User?                   @relation(fields: [userId], references: [id], map: "instructor_user_fk")
   availability InstructorAvailability[]
 
   @@map("instructors")
