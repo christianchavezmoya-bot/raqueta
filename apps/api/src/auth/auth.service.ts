@@ -24,29 +24,26 @@ export class AuthService {
     if (existing) throw new ConflictException('Email already registered');
 
     const hash = await bcrypt.hash(dto.password, 12);
-    const role = dto.role ?? Role.PLAYER;
 
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
         passwordHash: hash,
         phone: dto.phone,
-        role,
+        role: Role.PLAYER,
       },
     });
 
-    if (role === Role.PLAYER || role === Role.CASUAL_USER || role === Role.MEMBER) {
-      await this.prisma.playerProfile.create({
-        data: {
-          userId: user.id,
-          displayName: dto.displayName,
-        },
-      });
+    const profile = await this.prisma.playerProfile.create({
+      data: {
+        userId: user.id,
+        displayName: dto.displayName,
+      },
+    });
 
-      await this.prisma.playerStats.create({
-        data: { playerId: (await this.prisma.playerProfile.findUnique({ where: { userId: user.id } })).id },
-      });
-    }
+    await this.prisma.playerStats.create({
+      data: { playerId: profile.id },
+    });
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.saveRefreshToken(user.id, tokens.refreshToken);

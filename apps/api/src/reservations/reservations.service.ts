@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClubsService } from '../clubs/clubs.service';
 import { CourtsService } from '../courts/courts.service';
@@ -106,9 +106,14 @@ export class ReservationsService {
     });
   }
 
-  async cancel(reservationId: string, userId: string) {
+  async cancel(reservationId: string, userId: string, isStaff = false) {
     const reservation = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
     if (!reservation) throw new NotFoundException('Reservation not found');
+
+    if (!isStaff && reservation.userId !== userId) {
+      throw new ForbiddenException('You can only cancel your own reservations');
+    }
+
     return this.prisma.reservation.update({
       where: { id: reservationId },
       data: { status: 'CANCELLED' },

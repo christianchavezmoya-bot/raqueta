@@ -93,8 +93,14 @@ export class ReservationsController {
   @UseGuards(JwtAuthGuard)
   @Post('reservations/:id/cancel')
   @ApiBearerAuth()
-  cancel(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.reservationsService.cancel(id, userId);
+  cancel(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    const staffRoles: Role[] = [Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION];
+    const isStaff = staffRoles.includes(role as Role);
+    return this.reservationsService.cancel(id, userId, isStaff);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
