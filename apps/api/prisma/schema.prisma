@@ -154,6 +154,13 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
+  emailVerifiedAt         DateTime? @map("email_verified_at")
+  emailVerificationToken  String?   @unique @map("email_verification_token")
+  emailVerificationExpiry DateTime? @map("email_verification_expiry")
+  passwordResetToken      String?   @unique @map("password_reset_token")
+  passwordResetExpiry     DateTime? @map("password_reset_expiry")
+  expoPushToken           String?   @map("expo_push_token")
+
   playerProfile     PlayerProfile?
   memberships       Membership[]
   reservations      Reservation[]   @relation("UserReservations")

@@ -5,11 +5,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import api from '../src/lib/api';
-import { useAuthStore } from '../src/stores/auth.store';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const login = useAuthStore(s => s.login);
   const [form, setForm] = useState({ email: '', password: '', displayName: '', phone: '' });
   const [loading, setLoading] = useState(false);
 
@@ -21,8 +19,11 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await api.post('/auth/register', form);
-      await login(form.email, form.password);
-      router.replace('/(tabs)');
+      Alert.alert(
+        '¡Cuenta creada!',
+        'Revisa tu correo electrónico y haz clic en el enlace de verificación antes de iniciar sesión.',
+        [{ text: 'Ir al login', onPress: () => router.replace('/login') }],
+      );
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message ?? 'Error al registrarse');
     } finally {
@@ -62,6 +63,12 @@ export default function RegisterScreen() {
             </View>
           ))}
 
+          <View style={s.infoBox}>
+            <Text style={s.infoText}>
+              Recibirás un correo de verificación. Debes confirmar tu email antes de iniciar sesión.
+            </Text>
+          </View>
+
           <TouchableOpacity style={[s.button, loading && s.buttonDisabled]} onPress={handleRegister} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.buttonText}>Crear cuenta</Text>}
           </TouchableOpacity>
@@ -89,6 +96,11 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827',
   },
+  infoBox: {
+    backgroundColor: '#f0fdf4', borderRadius: 8, padding: 12, marginBottom: 14,
+    borderWidth: 1, borderColor: '#bbf7d0',
+  },
+  infoText: { fontSize: 12, color: '#166534', lineHeight: 18 },
   button: {
     backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 8,

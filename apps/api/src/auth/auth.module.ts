@@ -18,6 +18,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   providers: [AuthService, JwtStrategy],
+  // EmailService is provided globally via EmailModule
   controllers: [AuthController],
   exports: [AuthService, JwtModule],
 })

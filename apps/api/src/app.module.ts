@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { EmailModule } from './common/email/email.module';
 import { AuthModule } from './auth/auth.module';
 import { ClubsModule } from './clubs/clubs.module';
 import { CourtsModule } from './courts/courts.module';
@@ -22,6 +23,7 @@ import { ReportsModule } from './reports/reports.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
+    EmailModule,
     AuthModule,
     ClubsModule,
     CourtsModule,
