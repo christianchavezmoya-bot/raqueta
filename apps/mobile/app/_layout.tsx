@@ -22,6 +22,9 @@ Notifications.setNotificationHandler({
 async function registerPushToken() {
   // Push notifications only work on physical devices
   if (Platform.OS === 'web') return;
+  // Temporary iOS fallback: local device builds can proceed without the
+  // aps-environment entitlement while Apple account provisioning is unresolved.
+  if (Platform.OS === 'ios') return;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;

@@ -1,4 +1,4 @@
-import { PrismaClient, Role, SurfaceType, BillingPeriod } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -13,7 +13,7 @@ async function main() {
     create: {
       email: 'superadmin@raqueta.app',
       passwordHash: await bcrypt.hash('SuperAdmin123!', 12),
-      role: Role.SUPER_ADMIN,
+      role: 'SUPER_ADMIN',
       phone: '+56900000001',
     },
   });
@@ -26,7 +26,7 @@ async function main() {
     create: {
       email: 'admin@clubtenislascondes.cl',
       passwordHash: await bcrypt.hash('Admin123!', 12),
-      role: Role.CLUB_ADMIN,
+      role: 'CLUB_ADMIN',
       phone: '+56911111111',
     },
   });
@@ -39,7 +39,7 @@ async function main() {
     create: {
       email: 'manager@clubtenislascondes.cl',
       passwordHash: await bcrypt.hash('Manager123!', 12),
-      role: Role.MANAGER,
+      role: 'MANAGER',
       phone: '+56922222222',
     },
   });
@@ -51,7 +51,7 @@ async function main() {
     create: {
       email: 'recepcion@clubtenislascondes.cl',
       passwordHash: await bcrypt.hash('Reception123!', 12),
-      role: Role.RECEPTION,
+      role: 'RECEPTION',
       phone: '+56933333333',
     },
   });
@@ -63,7 +63,7 @@ async function main() {
     create: {
       email: 'profe.garcia@clubtenislascondes.cl',
       passwordHash: await bcrypt.hash('Instructor123!', 12),
-      role: Role.INSTRUCTOR,
+      role: 'INSTRUCTOR',
       phone: '+56944444444',
     },
   });
@@ -75,7 +75,7 @@ async function main() {
     create: {
       email: 'juan.perez@gmail.com',
       passwordHash: await bcrypt.hash('Player123!', 12),
-      role: Role.PLAYER,
+      role: 'PLAYER',
       phone: '+56955555555',
     },
   });
@@ -86,7 +86,7 @@ async function main() {
     create: {
       email: 'maria.lopez@gmail.com',
       passwordHash: await bcrypt.hash('Player123!', 12),
-      role: Role.PLAYER,
+      role: 'PLAYER',
       phone: '+56966666666',
     },
   });
@@ -97,7 +97,7 @@ async function main() {
     create: {
       email: 'carlos.silva@gmail.com',
       passwordHash: await bcrypt.hash('Player123!', 12),
-      role: Role.MEMBER,
+      role: 'MEMBER',
       phone: '+56977777777',
     },
   });
@@ -108,7 +108,7 @@ async function main() {
     create: {
       email: 'casual@gmail.com',
       passwordHash: await bcrypt.hash('Casual123!', 12),
-      role: Role.CASUAL_USER,
+      role: 'CASUAL_USER',
       phone: '+56988888888',
     },
   });
@@ -180,7 +180,7 @@ async function main() {
         clubId: club.id,
         name: 'Cancha Central',
         description: 'Nuestra cancha principal con gradas para espectadores',
-        surfaceType: SurfaceType.CLAY,
+        surfaceType: 'CLAY',
         indoor: false,
         lighting: true,
         active: true,
@@ -199,7 +199,7 @@ async function main() {
         id: 'court-2-seed',
         clubId: club.id,
         name: 'Cancha 2',
-        surfaceType: SurfaceType.CLAY,
+        surfaceType: 'CLAY',
         indoor: false,
         lighting: true,
         active: true,
@@ -219,7 +219,7 @@ async function main() {
         clubId: club.id,
         name: 'Cancha Cubierta',
         description: 'Cancha techada para jugar en cualquier clima',
-        surfaceType: SurfaceType.HARD,
+        surfaceType: 'HARD',
         indoor: true,
         lighting: true,
         active: true,
@@ -275,7 +275,7 @@ async function main() {
         name: 'Casual',
         description: 'Sin compromiso. Reserva cuando quieras.',
         price: 0,
-        billingPeriod: BillingPeriod.MONTHLY,
+        billingPeriod: 'MONTHLY',
         benefits: ['Reserva en línea', 'Tarifa casual'],
         active: true,
       },
@@ -289,7 +289,7 @@ async function main() {
         name: 'Socio Mensual',
         description: 'Acceso ilimitado con descuentos especiales',
         price: 45000,
-        billingPeriod: BillingPeriod.MONTHLY,
+        billingPeriod: 'MONTHLY',
         benefits: ['Tarifa socio', '2 clases grupales/mes', 'Vestuario premium', 'Acceso a torneos'],
         active: true,
       },
@@ -303,7 +303,7 @@ async function main() {
         name: 'Socio Anual',
         description: 'La mejor opción para jugadores frecuentes',
         price: 450000,
-        billingPeriod: BillingPeriod.ANNUAL,
+        billingPeriod: 'ANNUAL',
         benefits: ['Tarifa socio', '4 clases grupales/mes', 'Vestuario premium', 'Acceso a torneos', 'Prioridad en reservas'],
         active: true,
       },

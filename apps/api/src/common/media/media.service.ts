@@ -31,17 +31,26 @@ const MIME_EXT: Record<string, string> = {
 @Injectable()
 export class MediaService implements OnModuleInit {
   private readonly logger = new Logger(MediaService.name);
-  private readonly supabase: SupabaseClient;
-  private readonly publicBase: string;
+  private readonly supabase: SupabaseClient | null;
+  private readonly publicBase: string | null;
 
   constructor(private config: ConfigService) {
-    const url = config.getOrThrow<string>('SUPABASE_URL');
-    const key = config.getOrThrow<string>('SUPABASE_SERVICE_ROLE_KEY');
+    const url = config.get<string>('SUPABASE_URL');
+    const key = config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!url || !key) {
+      this.supabase = null;
+      this.publicBase = null;
+      this.logger.warn('Supabase storage is not configured. Media uploads are disabled.');
+      return;
+    }
+
     this.supabase = createClient(url, key, { auth: { persistSession: false } });
     this.publicBase = `${url}/storage/v1/object/public/${BUCKET}`;
   }
 
   async onModuleInit() {
+    if (!this.supabase) return;
     const { data: buckets } = await this.supabase.storage.listBuckets();
     const exists = buckets?.some(b => b.name === BUCKET);
     if (!exists) {
@@ -60,6 +69,7 @@ export class MediaService implements OnModuleInit {
    * Returns the public URL.
    */
   async uploadFixed(file: Express.Multer.File, storagePath: string): Promise<string> {
+    const supabase = this.requireSupabase();
     const mime = this.validate(file);
     const ext = MIME_EXT[mime];
     const fullPath = `${storagePath}.${ext}`;
@@ -69,9 +79,9 @@ export class MediaService implements OnModuleInit {
     // then uploading the new one.
     const otherExts = Object.values(MIME_EXT).filter(e => e !== ext);
     const stalePaths = otherExts.map(e => `${storagePath}.${e}`);
-    await this.supabase.storage.from(BUCKET).remove(stalePaths).catch(() => {});
+    await supabase.storage.from(BUCKET).remove(stalePaths).catch(() => {});
 
-    const { error } = await this.supabase.storage
+    const { error } = await supabase.storage
       .from(BUCKET)
       .upload(fullPath, file.buffer, { contentType: mime, upsert: true });
 
@@ -87,11 +97,12 @@ export class MediaService implements OnModuleInit {
     file: Express.Multer.File,
     pathPrefix: string,
   ): Promise<{ url: string; storagePath: string }> {
+    const supabase = this.requireSupabase();
     const mime = this.validate(file);
     const ext = MIME_EXT[mime];
     const fullPath = `${pathPrefix}/${uuid()}.${ext}`;
 
-    const { error } = await this.supabase.storage
+    const { error } = await supabase.storage
       .from(BUCKET)
       .upload(fullPath, file.buffer, { contentType: mime, upsert: false });
 
@@ -104,6 +115,7 @@ export class MediaService implements OnModuleInit {
    * Fire-and-forget safe — never throws.
    */
   async deleteByPath(storagePath: string): Promise<void> {
+    if (!this.supabase) return;
     const { error } = await this.supabase.storage.from(BUCKET).remove([storagePath]);
     if (error) this.logger.warn(`Storage delete failed for ${storagePath}: ${error.message}`);
   }
@@ -125,5 +137,12 @@ export class MediaService implements OnModuleInit {
     const mime = detectMime(file.buffer);
     if (!mime) throw new BadRequestException('Invalid file type. Only JPEG, PNG, and WebP are accepted.');
     return mime;
+  }
+
+  private requireSupabase(): SupabaseClient {
+    if (!this.supabase || !this.publicBase) {
+      throw new InternalServerErrorException('Media storage is not configured.');
+    }
+    return this.supabase;
   }
 }
