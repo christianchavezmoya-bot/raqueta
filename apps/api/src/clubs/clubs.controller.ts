@@ -1,8 +1,11 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Param, Body, Query, UseGuards, Put,
+  UploadedFile, UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { ClubsService } from './clubs.service';
 import { CreateClubDto, UpdateClubProfileDto } from './dto/create-club.dto';
@@ -11,6 +14,9 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+
+const uploadInterceptor = () =>
+  UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }));
 
 @ApiTags('Clubs')
 @Controller('clubs')
@@ -60,15 +66,39 @@ export class ClubsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post(':id/logo')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload club logo' })
+  @ApiConsumes('multipart/form-data')
+  @uploadInterceptor()
+  uploadLogo(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.clubsService.uploadLogo(id, file);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post(':id/banner')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload club banner' })
+  @ApiConsumes('multipart/form-data')
+  @uploadInterceptor()
+  uploadBanner(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.clubsService.uploadBanner(id, file);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
   @Post(':id/photos')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Add club photo' })
-  addPhoto(
+  @ApiOperation({ summary: 'Upload club gallery photo' })
+  @ApiConsumes('multipart/form-data')
+  @uploadInterceptor()
+  uploadPhoto(
     @Param('id') id: string,
-    @Body('photoUrl') photoUrl: string,
+    @UploadedFile() file: Express.Multer.File,
     @Body('caption') caption?: string,
   ) {
-    return this.clubsService.addPhoto(id, photoUrl, caption);
+    return this.clubsService.uploadPhoto(id, file, caption);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

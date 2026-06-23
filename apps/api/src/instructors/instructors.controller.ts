@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Put } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Put, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { InstructorsService } from './instructors.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -30,6 +32,17 @@ export class InstructorsController {
   @ApiBearerAuth()
   create(@Param('clubId') clubId: string, @Body() body: any) {
     return this.instructorsService.create(clubId, body);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post('instructors/:id/photo')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload instructor photo' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }))
+  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.instructorsService.uploadPhoto(id, file);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

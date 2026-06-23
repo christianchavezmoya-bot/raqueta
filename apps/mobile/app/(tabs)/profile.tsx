@@ -1,15 +1,19 @@
+import { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../src/stores/auth.store';
 import api from '../../src/lib/api';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const { data: me } = useQuery({
     queryKey: ['me-profile'],
@@ -21,13 +25,50 @@ export default function ProfileScreen() {
     queryFn: async () => { const { data } = await api.get('/users/me/reservations?limit=5'); return data; },
   });
 
-  const { data: myPayments } = useQuery({
-    queryKey: ['my-payments-profile'],
-    queryFn: async () => { const { data } = await api.get('/users/me/payments'); return data; },
-  });
-
   const profile = me?.playerProfile;
   const stats = profile?.stats;
+
+  const handleAvatarPress = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para cambiar tu foto.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    const mimeType = mimeMap[ext] ?? 'image/jpeg';
+
+    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+      Alert.alert('Archivo muy grande', 'La imagen no puede superar los 5 MB.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    const form = new FormData();
+    form.append('file', { uri: asset.uri, name: `avatar.${ext}`, type: mimeType } as any);
+
+    try {
+      await api.post('/players/me/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      queryClient.invalidateQueries({ queryKey: ['me-profile'] });
+      Alert.alert('Foto actualizada', 'Tu avatar se actualizó correctamente.');
+    } catch (err: any) {
+      const msg = err.response?.data?.message ?? 'Error al subir la imagen';
+      Alert.alert('Error', msg);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Cerrar sesión', '¿Estás seguro?', [
@@ -47,11 +88,22 @@ export default function ProfileScreen() {
     <ScrollView style={s.container} showsVerticalScrollIndicator={false}>
       {/* Profile header */}
       <View style={s.profileHeader}>
-        <View style={s.avatarLarge}>
-          <Text style={s.avatarText}>
-            {(profile?.displayName ?? user?.email ?? 'U')[0].toUpperCase()}
-          </Text>
-        </View>
+        <TouchableOpacity onPress={handleAvatarPress} style={s.avatarWrapper} activeOpacity={0.85}>
+          {profile?.profilePhotoUrl ? (
+            <Image source={{ uri: profile.profilePhotoUrl }} style={s.avatarImage} />
+          ) : (
+            <View style={s.avatarLarge}>
+              <Text style={s.avatarText}>
+                {(profile?.displayName ?? user?.email ?? 'U')[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={s.cameraOverlay}>
+            {avatarUploading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Ionicons name="camera" size={14} color="#fff" />}
+          </View>
+        </TouchableOpacity>
         <Text style={s.displayName}>{profile?.displayName ?? 'Tu perfil'}</Text>
         <Text style={s.email}>{me?.email}</Text>
         <View style={s.levelBadge}>
@@ -101,7 +153,7 @@ export default function ProfileScreen() {
       <View style={s.section}>
         <Text style={s.sectionTitle}>Mi cuenta</Text>
         {[
-          { label: 'Editar perfil', icon: 'person-outline', onPress: () => {} },
+          { label: 'Cambiar foto', icon: 'camera-outline', onPress: handleAvatarPress },
           { label: 'Mis pagos', icon: 'card-outline', onPress: () => {} },
           { label: 'Mis membresías', icon: 'shield-checkmark-outline', onPress: () => {} },
           { label: 'Notificaciones', icon: 'notifications-outline', onPress: () => {} },
@@ -127,11 +179,19 @@ export default function ProfileScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   profileHeader: { backgroundColor: '#16a34a', alignItems: 'center', paddingTop: 60, paddingBottom: 28, paddingHorizontal: 20 },
+  avatarWrapper: { position: 'relative', marginBottom: 12 },
+  avatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)' },
   avatarLarge: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.25)',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
+    justifyContent: 'center', alignItems: 'center',
   },
   avatarText: { fontSize: 32, fontWeight: '800', color: '#fff' },
+  cameraOverlay: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#16a34a',
+  },
   displayName: { fontSize: 22, fontWeight: '800', color: '#fff' },
   email: { fontSize: 14, color: '#bbf7d0', marginTop: 4 },
   levelBadge: { marginTop: 10, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20 },

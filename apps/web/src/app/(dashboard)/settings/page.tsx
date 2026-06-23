@@ -1,20 +1,198 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Settings, Clock, MapPin } from 'lucide-react';
+import { Settings, Clock, Image, Upload, Trash2, X } from 'lucide-react';
 import { useClubStore } from '@/stores/club.store';
 import { useClub } from '@/hooks/use-club';
 import api from '@/lib/api';
 
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const ACCEPT = 'image/jpeg,image/png,image/webp';
+const MAX_MB = 5;
+
+function ImageUploader({
+  label,
+  currentUrl,
+  endpoint,
+  onSuccess,
+}: {
+  label: string;
+  currentUrl?: string | null;
+  endpoint: string;
+  onSuccess: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setError(`El archivo supera los ${MAX_MB} MB permitidos.`);
+      return;
+    }
+
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      await api.post(endpoint, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(`${label} actualizado`);
+      onSuccess();
+      setPreview(null);
+    } catch (err: any) {
+      const msg = err.response?.data?.message ?? 'Error al subir imagen';
+      setError(msg);
+      toast.error(msg);
+      setPreview(null);
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const displayUrl = preview ?? currentUrl;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <div className="flex items-center gap-4">
+        {displayUrl ? (
+          <img
+            src={displayUrl}
+            alt={label}
+            className="w-20 h-20 object-cover rounded-xl border border-gray-200"
+          />
+        ) : (
+          <div className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
+            <Image className="w-6 h-6 text-gray-300" />
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-2 text-sm px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {uploading ? 'Subiendo...' : 'Seleccionar imagen'}
+          </button>
+          <p className="text-xs text-gray-400">JPEG, PNG o WebP · máx {MAX_MB} MB</p>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept={ACCEPT} className="hidden" onChange={handleFile} />
+    </div>
+  );
+}
+
+function GalleryManager({ clubId, photos, onSuccess }: { clubId: string; photos: any[]; onSuccess: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (photoId: string) => api.delete(`/clubs/${clubId}/photos/${photoId}`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['club', clubId] }); toast.success('Foto eliminada'); },
+    onError: () => toast.error('Error al eliminar foto'),
+  });
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setError(`El archivo supera los ${MAX_MB} MB permitidos.`);
+      return;
+    }
+
+    setUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      await api.post(`/clubs/${clubId}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Foto agregada');
+      onSuccess();
+    } catch (err: any) {
+      const msg = err.response?.data?.message ?? 'Error al subir foto';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <label className="block text-sm font-medium text-gray-700">Galería de fotos</label>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-2 text-sm px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          {uploading ? 'Subiendo...' : 'Agregar foto'}
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+
+      {photos.length === 0 ? (
+        <div
+          className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-gray-300 transition-colors"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Image className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">Haz clic para subir la primera foto</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          {photos.map((photo: any) => (
+            <div key={photo.id} className="relative group">
+              <img
+                src={photo.photoUrl}
+                alt={photo.caption ?? 'Club photo'}
+                className="w-full h-24 object-cover rounded-xl border border-gray-200"
+              />
+              <button
+                onClick={() => deleteMutation.mutate(photo.id)}
+                disabled={deleteMutation.isPending}
+                className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                title="Eliminar foto"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input ref={inputRef} type="file" accept={ACCEPT} className="hidden" onChange={handleFile} />
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const selectedClub = useClubStore(s => s.selectedClub);
   const { data: club, isLoading } = useClub(selectedClub?.id);
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'profile' | 'hours'>('profile');
+  const [tab, setTab] = useState<'profile' | 'hours' | 'media'>('profile');
 
   const [profileForm, setProfileForm] = useState({
     description: '', address: '', city: '', region: '',
@@ -73,17 +251,19 @@ export default function SettingsPage() {
     onError: () => toast.error('Error al actualizar horarios'),
   });
 
+  const refreshClub = () => queryClient.invalidateQueries({ queryKey: ['club', selectedClub?.id] });
+
   if (isLoading) return <div className="card animate-pulse h-64" />;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configuración del club</h1>
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         {[
           { key: 'profile', label: 'Perfil', icon: Settings },
           { key: 'hours', label: 'Horarios', icon: Clock },
+          { key: 'media', label: 'Imágenes', icon: Image },
         ].map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -203,6 +383,37 @@ export default function SettingsPage() {
           >
             {updateHoursMutation.isPending ? 'Guardando...' : 'Guardar horarios'}
           </button>
+        </div>
+      )}
+
+      {tab === 'media' && selectedClub && (
+        <div className="card max-w-2xl space-y-8">
+          <div>
+            <h2 className="font-semibold text-gray-900 mb-6">Imágenes del club</h2>
+            <div className="space-y-6">
+              <ImageUploader
+                label="Logo del club"
+                currentUrl={club?.profile?.logoUrl}
+                endpoint={`/clubs/${selectedClub.id}/logo`}
+                onSuccess={refreshClub}
+              />
+              <div className="border-t border-gray-100 pt-6">
+                <ImageUploader
+                  label="Banner / portada"
+                  currentUrl={club?.profile?.bannerUrl}
+                  endpoint={`/clubs/${selectedClub.id}/banner`}
+                  onSuccess={refreshClub}
+                />
+              </div>
+              <div className="border-t border-gray-100 pt-6">
+                <GalleryManager
+                  clubId={selectedClub.id}
+                  photos={club?.photos ?? []}
+                  onSuccess={refreshClub}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

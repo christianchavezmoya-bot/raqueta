@@ -1,5 +1,7 @@
-import { Controller, Get, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Patch, Post, Param, Body, Query, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -50,6 +52,16 @@ export class PlayersController {
   @ApiOperation({ summary: 'Get public player profile' })
   getPublicProfile(@Param('id') id: string) {
     return this.playersService.findPublicProfile(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/avatar')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload my avatar' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }))
+  uploadAvatar(@CurrentUser('id') userId: string, @UploadedFile() file: Express.Multer.File) {
+    return this.playersService.uploadAvatar(userId, file);
   }
 
   @UseGuards(JwtAuthGuard)

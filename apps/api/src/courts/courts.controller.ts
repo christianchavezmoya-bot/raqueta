@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CourtsService } from './courts.service';
 import { CreateCourtDto, UpdateCourtDto, CreateCourtPricingDto, CreateCourtBlockDto } from './dto/court.dto';
@@ -35,6 +37,17 @@ export class CourtsController {
   @ApiOperation({ summary: 'Add court to club' })
   create(@Param('clubId') clubId: string, @Body() dto: CreateCourtDto) {
     return this.courtsService.create(clubId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post('courts/:id/photo')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload court photo' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }))
+  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.courtsService.uploadPhoto(id, file);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MediaService } from '../common/media/media.service';
 import { CreateClubDto, UpdateClubProfileDto } from './dto/create-club.dto';
 
 @Injectable()
 export class ClubsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private media: MediaService,
+  ) {}
 
   async findAll(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
@@ -77,6 +81,35 @@ export class ClubsService {
     });
   }
 
+  async uploadLogo(clubId: string, file: Express.Multer.File) {
+    await this.ensureExists(clubId);
+    const url = await this.media.uploadFixed(file, `clubs/${clubId}/logo`);
+    return this.prisma.clubProfile.upsert({
+      where: { clubId },
+      update: { logoUrl: url },
+      create: { clubId, logoUrl: url },
+    });
+  }
+
+  async uploadBanner(clubId: string, file: Express.Multer.File) {
+    await this.ensureExists(clubId);
+    const url = await this.media.uploadFixed(file, `clubs/${clubId}/banner`);
+    return this.prisma.clubProfile.upsert({
+      where: { clubId },
+      update: { bannerUrl: url },
+      create: { clubId, bannerUrl: url },
+    });
+  }
+
+  async uploadPhoto(clubId: string, file: Express.Multer.File, caption?: string) {
+    await this.ensureExists(clubId);
+    const { url, storagePath } = await this.media.uploadUnique(file, `clubs/${clubId}/photos`);
+    const count = await this.prisma.clubPhoto.count({ where: { clubId } });
+    return this.prisma.clubPhoto.create({
+      data: { clubId, photoUrl: url, caption, displayOrder: count },
+    });
+  }
+
   async addPhoto(clubId: string, photoUrl: string, caption?: string) {
     await this.ensureExists(clubId);
     const count = await this.prisma.clubPhoto.count({ where: { clubId } });
@@ -86,6 +119,11 @@ export class ClubsService {
   }
 
   async deletePhoto(photoId: string) {
+    const photo = await this.prisma.clubPhoto.findUnique({ where: { id: photoId } });
+    if (photo) {
+      const storagePath = this.media.extractPath(photo.photoUrl);
+      if (storagePath) await this.media.deleteByPath(storagePath);
+    }
     return this.prisma.clubPhoto.delete({ where: { id: photoId } });
   }
 

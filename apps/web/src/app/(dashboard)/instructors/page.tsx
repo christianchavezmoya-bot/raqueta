@@ -1,14 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Award, Clock, Star } from 'lucide-react';
+import { Plus, Award, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useClubStore } from '@/stores/club.store';
 import { useInstructors } from '@/hooks/use-club';
 import api from '@/lib/api';
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+function InstructorPhotoUpload({ instructorId, currentUrl }: { instructorId: string; currentUrl?: string | null }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Archivo demasiado grande (máx 5 MB)'); return; }
+    setUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      await api.post(`/instructors/${instructorId}/photo`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Foto actualizada');
+      queryClient.invalidateQueries({ queryKey: ['instructors'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Error al subir foto');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="relative flex-shrink-0">
+      {currentUrl ? (
+        <img src={currentUrl} alt="Foto" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow" />
+      ) : (
+        <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center">
+          <Award className="w-6 h-6 text-purple-600" />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        title="Subir foto"
+        className="absolute -bottom-1 -right-1 w-5 h-5 bg-brand-600 text-white rounded-full flex items-center justify-center shadow hover:bg-brand-700 disabled:opacity-50"
+      >
+        <Upload className="w-2.5 h-2.5" />
+      </button>
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
+    </div>
+  );
+}
 
 export default function InstructorsPage() {
   const selectedClub = useClubStore(s => s.selectedClub);
@@ -93,9 +140,7 @@ export default function InstructorsPage() {
               <div key={inst.id} className="card hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Award className="w-6 h-6 text-purple-600" />
-                    </div>
+                    <InstructorPhotoUpload instructorId={inst.id} currentUrl={inst.photoUrl} />
                     <div>
                       <h3 className="font-semibold text-gray-900">{inst.name}</h3>
                       <p className="text-xs text-gray-500">{inst.experienceYears} años de experiencia</p>

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, MapPin, Sun, Zap, Power } from 'lucide-react';
+import { Plus, MapPin, Sun, Zap, Power, Upload, Image } from 'lucide-react';
 import { toast } from 'sonner';
 import { useClubStore } from '@/stores/club.store';
 import { useCourts } from '@/hooks/use-club';
@@ -16,6 +16,47 @@ const SURFACES: Record<string, string> = {
   CARPET: 'Alfombra',
   INDOOR_HARD: 'Dura interior',
 };
+
+function CourtPhotoUpload({ courtId }: { courtId: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Archivo demasiado grande (máx 5 MB)'); return; }
+    setUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      await api.post(`/courts/${courtId}/photo`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Foto actualizada');
+      queryClient.invalidateQueries({ queryKey: ['courts'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Error al subir foto');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        title="Subir foto de cancha"
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
+      >
+        <Upload className="w-3.5 h-3.5" />
+        {uploading ? 'Subiendo...' : 'Foto'}
+      </button>
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
+    </>
+  );
+}
 
 export default function CourtsPage() {
   const selectedClub = useClubStore(s => s.selectedClub);
@@ -127,12 +168,17 @@ export default function CourtsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {courts?.map((court: any) => (
-            <div key={court.id} className="card hover:shadow-md transition-shadow">
+            <div key={court.id} className="card hover:shadow-md transition-shadow overflow-hidden">
+              {court.photoUrl && (
+                <img src={court.photoUrl} alt={court.name} className="h-32 object-cover -mx-6 -mt-5 mb-4 w-[calc(100%+3rem)]" />
+              )}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-brand-600" />
-                  </div>
+                  {!court.photoUrl && (
+                    <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center">
+                      <MapPin className="w-5 h-5 text-brand-600" />
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-semibold text-gray-900">{court.name}</h3>
                     <p className="text-xs text-gray-500">{SURFACES[court.surfaceType] ?? court.surfaceType}</p>
@@ -161,7 +207,7 @@ export default function CourtsPage() {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-3 border-t border-gray-100">
+              <div className="flex gap-4 pt-3 border-t border-gray-100">
                 <button
                   onClick={() => toggleMutation.mutate({ id: court.id, active: !court.active })}
                   className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
@@ -169,6 +215,7 @@ export default function CourtsPage() {
                   <Power className="w-3.5 h-3.5" />
                   {court.active ? 'Desactivar' : 'Activar'}
                 </button>
+                <CourtPhotoUpload courtId={court.id} />
               </div>
             </div>
           ))}

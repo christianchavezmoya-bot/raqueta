@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MediaService } from '../common/media/media.service';
 
 @Injectable()
 export class PlayersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private media: MediaService,
+  ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
     const skip = (page - 1) * limit;
@@ -34,6 +38,16 @@ export class PlayersService {
     if (!user.playerProfile.publicVisibility) throw new NotFoundException('Profile is private');
     const { passwordHash, ...safe } = user;
     return safe;
+  }
+
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
+    if (!profile) throw new NotFoundException('Profile not found');
+    const url = await this.media.uploadFixed(file, `players/${userId}/avatar`);
+    return this.prisma.playerProfile.update({
+      where: { userId },
+      data: { profilePhotoUrl: url },
+    });
   }
 
   async updateMyProfile(userId: string, data: any) {
