@@ -10,6 +10,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { ActingUser } from '../common/utils/club-scope';
 
 @ApiTags('Courts')
 @Controller()
@@ -46,8 +47,12 @@ export class CourtsController {
   @ApiOperation({ summary: 'Upload court photo' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }))
-  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-    return this.courtsService.uploadPhoto(id, file);
+  uploadPhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.courtsService.uploadPhoto(id, file, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

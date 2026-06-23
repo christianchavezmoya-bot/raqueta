@@ -160,6 +160,7 @@ model User {
   passwordResetToken      String?   @unique @map("password_reset_token")
   passwordResetExpiry     DateTime? @map("password_reset_expiry")
   expoPushToken           String?   @map("expo_push_token")
+  staffClubId             String?   @map("staff_club_id")
 
   playerProfile     PlayerProfile?
   memberships       Membership[]

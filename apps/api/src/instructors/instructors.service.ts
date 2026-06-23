@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
+import { ActingUser, assertClubScope } from '../common/utils/club-scope';
 
 @Injectable()
 export class InstructorsService {
@@ -33,8 +34,9 @@ export class InstructorsService {
     });
   }
 
-  async uploadPhoto(id: string, file: Express.Multer.File) {
-    await this.ensureExists(id);
+  async uploadPhoto(id: string, file: Express.Multer.File, actor: ActingUser) {
+    const instructor = await this.ensureExists(id);
+    await assertClubScope(actor, instructor.clubId, this.prisma);
     const url = await this.media.uploadFixed(file, `instructors/${id}/photo`);
     return this.prisma.instructor.update({ where: { id }, data: { photoUrl: url } });
   }

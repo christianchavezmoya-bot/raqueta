@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
 import { CreateClubDto, UpdateClubProfileDto } from './dto/create-club.dto';
+import { ActingUser, assertClubScope } from '../common/utils/club-scope';
 
 @Injectable()
 export class ClubsService {
@@ -72,8 +73,9 @@ export class ClubsService {
     });
   }
 
-  async updateProfile(clubId: string, dto: UpdateClubProfileDto) {
+  async updateProfile(clubId: string, dto: UpdateClubProfileDto, actor: ActingUser) {
     await this.ensureExists(clubId);
+    await assertClubScope(actor, clubId, this.prisma);
     return this.prisma.clubProfile.upsert({
       where: { clubId },
       update: dto,
@@ -81,8 +83,9 @@ export class ClubsService {
     });
   }
 
-  async uploadLogo(clubId: string, file: Express.Multer.File) {
+  async uploadLogo(clubId: string, file: Express.Multer.File, actor: ActingUser) {
     await this.ensureExists(clubId);
+    await assertClubScope(actor, clubId, this.prisma);
     const url = await this.media.uploadFixed(file, `clubs/${clubId}/logo`);
     return this.prisma.clubProfile.upsert({
       where: { clubId },
@@ -91,8 +94,9 @@ export class ClubsService {
     });
   }
 
-  async uploadBanner(clubId: string, file: Express.Multer.File) {
+  async uploadBanner(clubId: string, file: Express.Multer.File, actor: ActingUser) {
     await this.ensureExists(clubId);
+    await assertClubScope(actor, clubId, this.prisma);
     const url = await this.media.uploadFixed(file, `clubs/${clubId}/banner`);
     return this.prisma.clubProfile.upsert({
       where: { clubId },
@@ -101,9 +105,10 @@ export class ClubsService {
     });
   }
 
-  async uploadPhoto(clubId: string, file: Express.Multer.File, caption?: string) {
+  async uploadPhoto(clubId: string, file: Express.Multer.File, actor: ActingUser, caption?: string) {
     await this.ensureExists(clubId);
-    const { url, storagePath } = await this.media.uploadUnique(file, `clubs/${clubId}/photos`);
+    await assertClubScope(actor, clubId, this.prisma);
+    const { url } = await this.media.uploadUnique(file, `clubs/${clubId}/photos`);
     const count = await this.prisma.clubPhoto.count({ where: { clubId } });
     return this.prisma.clubPhoto.create({
       data: { clubId, photoUrl: url, caption, displayOrder: count },
@@ -118,29 +123,42 @@ export class ClubsService {
     });
   }
 
-  async deletePhoto(photoId: string) {
+  async deletePhoto(photoId: string, actor: ActingUser) {
     const photo = await this.prisma.clubPhoto.findUnique({ where: { id: photoId } });
-    if (photo) {
-      const storagePath = this.media.extractPath(photo.photoUrl);
-      if (storagePath) await this.media.deleteByPath(storagePath);
-    }
+    if (!photo) throw new NotFoundException('Photo not found');
+    await assertClubScope(actor, photo.clubId, this.prisma);
+    const storagePath = this.media.extractPath(photo.photoUrl);
+    if (storagePath) await this.media.deleteByPath(storagePath);
     return this.prisma.clubPhoto.delete({ where: { id: photoId } });
   }
 
-  async setOpeningHours(clubId: string, hours: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isClosed?: boolean }>) {
+  async setOpeningHours(
+    clubId: string,
+    hours: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isClosed?: boolean }>,
+    actor: ActingUser,
+  ) {
     await this.ensureExists(clubId);
+    await assertClubScope(actor, clubId, this.prisma);
     await this.prisma.clubOpeningHour.deleteMany({ where: { clubId } });
     return this.prisma.clubOpeningHour.createMany({
       data: hours.map(h => ({ ...h, clubId })),
     });
   }
 
-  async addSpecialHour(clubId: string, data: { date: Date; openTime?: string; closeTime?: string; isClosed: boolean; reason?: string }) {
+  async addSpecialHour(
+    clubId: string,
+    data: { date: Date; openTime?: string; closeTime?: string; isClosed: boolean; reason?: string },
+    actor: ActingUser,
+  ) {
     await this.ensureExists(clubId);
+    await assertClubScope(actor, clubId, this.prisma);
     return this.prisma.clubSpecialHour.create({ data: { clubId, ...data } });
   }
 
-  async deleteSpecialHour(id: string) {
+  async deleteSpecialHour(id: string, actor: ActingUser) {
+    const hour = await this.prisma.clubSpecialHour.findUnique({ where: { id }, select: { clubId: true } });
+    if (!hour) throw new NotFoundException('Special hour not found');
+    await assertClubScope(actor, hour.clubId, this.prisma);
     return this.prisma.clubSpecialHour.delete({ where: { id } });
   }
 

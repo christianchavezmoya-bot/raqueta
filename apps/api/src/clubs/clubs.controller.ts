@@ -14,6 +14,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { ActingUser } from '../common/utils/club-scope';
 
 const uploadInterceptor = () =>
   UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }));
@@ -60,8 +61,12 @@ export class ClubsController {
   @Patch(':id/profile')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update club profile' })
-  updateProfile(@Param('id') id: string, @Body() dto: UpdateClubProfileDto) {
-    return this.clubsService.updateProfile(id, dto);
+  updateProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateClubProfileDto,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubsService.updateProfile(id, dto, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -71,8 +76,12 @@ export class ClubsController {
   @ApiOperation({ summary: 'Upload club logo' })
   @ApiConsumes('multipart/form-data')
   @uploadInterceptor()
-  uploadLogo(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-    return this.clubsService.uploadLogo(id, file);
+  uploadLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubsService.uploadLogo(id, file, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -82,8 +91,12 @@ export class ClubsController {
   @ApiOperation({ summary: 'Upload club banner' })
   @ApiConsumes('multipart/form-data')
   @uploadInterceptor()
-  uploadBanner(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-    return this.clubsService.uploadBanner(id, file);
+  uploadBanner(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubsService.uploadBanner(id, file, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -96,9 +109,10 @@ export class ClubsController {
   uploadPhoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
     @Body('caption') caption?: string,
   ) {
-    return this.clubsService.uploadPhoto(id, file, caption);
+    return this.clubsService.uploadPhoto(id, file, actor, caption);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -106,8 +120,8 @@ export class ClubsController {
   @Delete(':id/photos/:photoId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete club photo' })
-  deletePhoto(@Param('photoId') photoId: string) {
-    return this.clubsService.deletePhoto(photoId);
+  deletePhoto(@Param('photoId') photoId: string, @CurrentUser() actor: ActingUser) {
+    return this.clubsService.deletePhoto(photoId, actor);
   }
 
   @Public()
@@ -122,8 +136,12 @@ export class ClubsController {
   @Put(':clubId/opening-hours')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set club opening hours' })
-  setOpeningHours(@Param('clubId') clubId: string, @Body() body: { hours: any[] }) {
-    return this.clubsService.setOpeningHours(clubId, body.hours);
+  setOpeningHours(
+    @Param('clubId') clubId: string,
+    @Body() body: { hours: any[] },
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubsService.setOpeningHours(clubId, body.hours, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -131,8 +149,12 @@ export class ClubsController {
   @Post(':clubId/special-hours')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Add special hour/closure' })
-  addSpecialHour(@Param('clubId') clubId: string, @Body() body: any) {
-    return this.clubsService.addSpecialHour(clubId, body);
+  addSpecialHour(
+    @Param('clubId') clubId: string,
+    @Body() body: any,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubsService.addSpecialHour(clubId, body, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -140,7 +162,7 @@ export class ClubsController {
   @Delete(':clubId/special-hours/:id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete special hour' })
-  deleteSpecialHour(@Param('id') id: string) {
-    return this.clubsService.deleteSpecialHour(id);
+  deleteSpecialHour(@Param('id') id: string, @CurrentUser() actor: ActingUser) {
+    return this.clubsService.deleteSpecialHour(id, actor);
   }
 }

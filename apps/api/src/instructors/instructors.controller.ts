@@ -7,7 +7,9 @@ import { InstructorsService } from './instructors.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { ActingUser } from '../common/utils/club-scope';
 
 @ApiTags('Instructors')
 @Controller()
@@ -41,8 +43,12 @@ export class InstructorsController {
   @ApiOperation({ summary: 'Upload instructor photo' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } }))
-  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-    return this.instructorsService.uploadPhoto(id, file);
+  uploadPhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.instructorsService.uploadPhoto(id, file, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

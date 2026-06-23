@@ -146,6 +146,13 @@ async function main() {
   });
   console.log('✅ Club created:', club.name);
 
+  // ─── STAFF CLUB AFFILIATION ──────────────────────────────────────────────────
+  await prisma.user.update({ where: { id: clubAdmin.id }, data: { staffClubId: club.id } });
+  await prisma.user.update({ where: { id: manager.id }, data: { staffClubId: club.id } });
+  await prisma.user.update({ where: { id: reception.id }, data: { staffClubId: club.id } });
+  await prisma.user.update({ where: { id: instructorUser.id }, data: { staffClubId: club.id } });
+  console.log('✅ Staff club affiliations set');
+
   // ─── OPENING HOURS ───────────────────────────────────────────────────────────
   const openingHours = [
     { dayOfWeek: 0, openTime: '08:00', closeTime: '20:00', isClosed: false },
