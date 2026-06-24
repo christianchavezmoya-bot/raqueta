@@ -1,14 +1,14 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Param, Body, Query, UseGuards, Put,
-  UploadedFile, UseInterceptors,
+  UploadedFile, UseInterceptors, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { ClubsService } from './clubs.service';
-import { CreateClubDto, UpdateClubProfileDto } from './dto/create-club.dto';
+import { CreateClubDto, UpdateClubProfileDto, RegisterClubDto } from './dto/create-club.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -34,6 +34,14 @@ export class ClubsController {
   }
 
   @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Self-service club registration with 14-day free trial (no auth required)' })
+  registerClub(@Body() dto: RegisterClubDto) {
+    return this.clubsService.register(dto);
+  }
+
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get club by ID' })
   findOne(@Param('id') id: string) {
@@ -51,9 +59,27 @@ export class ClubsController {
   @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN)
   @Post()
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a new club' })
+  @ApiOperation({ summary: 'Create a new club (staff only)' })
   create(@Body() dto: CreateClubDto, @CurrentUser('id') userId: string) {
     return this.clubsService.create(dto, userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  @Patch(':id/unlock')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'SUPER_ADMIN: promote club to ACTIVE (manual upgrade / trial end)' })
+  unlock(@Param('id') id: string) {
+    return this.clubsService.unlock(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  @Patch(':id/extend-trial')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'SUPER_ADMIN: extend trial by N days (default 14)' })
+  extendTrial(@Param('id') id: string, @Body('days') days?: number) {
+    return this.clubsService.extendTrial(id, days);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

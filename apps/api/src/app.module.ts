@@ -20,6 +20,8 @@ import { RankingsModule } from './rankings/rankings.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
+import { InvitationsModule } from './invitations/invitations.module';
+import { MatchLogModule } from './match-log/match-log.module';
 
 @Module({
   providers: [
@@ -29,7 +31,7 @@ import { ReportsModule } from './reports/reports.module';
     },
   ],
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     EmailModule,
@@ -48,6 +50,8 @@ import { ReportsModule } from './reports/reports.module';
     CalendarModule,
     NotificationsModule,
     ReportsModule,
+    InvitationsModule,
+    MatchLogModule,
   ],
 })
 export class AppModule {}

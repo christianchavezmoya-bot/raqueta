@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, Alert,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -14,7 +14,7 @@ import api from '../../src/lib/api';
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore(s => s.user);
-  const logout = useAuthStore(s => s.logout);
+  const qc = useQueryClient();
 
   const { data: me, isLoading: meLoading } = useQuery({
     queryKey: ['me'],
@@ -31,7 +31,14 @@ export default function HomeScreen() {
     queryFn: async () => { const { data } = await api.get('/users/me/reservations?limit=2'); return data; },
   });
 
+  const toggleAvail = useMutation({
+    mutationFn: () => api.patch('/players/me/availability'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['me'] }); qc.invalidateQueries({ queryKey: ['me-profile'] }); },
+    onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo actualizar'),
+  });
+
   const profile = me?.playerProfile;
+  const isAvailable = profile?.availableForMatch ?? false;
   const nextReservation = myReservations?.data?.[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';
@@ -39,8 +46,8 @@ export default function HomeScreen() {
   const quickActions = [
     { label: 'Reservar cancha', icon: 'tennisball', color: '#16a34a', onPress: () => router.push('/(tabs)/explore') },
     { label: 'Ver torneos', icon: 'trophy', color: '#d97706', onPress: () => router.push('/(tabs)/tournaments') },
-    { label: 'Mi ranking', icon: 'bar-chart', color: '#7c3aed', onPress: () => router.push('/(tabs)/profile') },
-    { label: 'Calendario', icon: 'calendar', color: '#0284c7', onPress: () => router.push('/(tabs)/calendar') },
+    { label: 'Buscar jugadores', icon: 'people', color: '#0284c7', onPress: () => router.push('/(tabs)/explore') },
+    { label: 'Mi log', icon: 'clipboard', color: '#7c3aed', onPress: () => router.push('/(tabs)/profile') },
   ];
 
   return (
@@ -51,11 +58,23 @@ export default function HomeScreen() {
           <Text style={s.greeting}>{greeting},</Text>
           <Text style={s.name}>{profile?.displayName ?? user?.email?.split('@')[0] ?? 'Jugador'} 👋</Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={s.avatar}>
-          <Text style={s.avatarText}>
-            {(profile?.displayName ?? user?.email ?? 'U')[0].toUpperCase()}
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {/* Availability quick-toggle */}
+          <TouchableOpacity
+            onPress={() => toggleAvail.mutate()}
+            style={[s.availBtn, isAvailable && s.availBtnOn]}
+            disabled={toggleAvail.isPending}
+          >
+            {toggleAvail.isPending
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.availBtnText}>{isAvailable ? '✓ Disponible' : 'Disponible'}</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={s.avatar}>
+            <Text style={s.avatarText}>
+              {(profile?.displayName ?? user?.email ?? 'U')[0].toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -131,6 +150,12 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   avatarText: { fontSize: 18, fontWeight: '700', color: '#fff' },
+  availBtn: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  availBtnOn: { backgroundColor: '#15803d', borderColor: '#15803d' },
+  availBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   scroll: { padding: 16, paddingBottom: 24 },
   nextBanner: {
     backgroundColor: '#16a34a', borderRadius: 16, padding: 18, marginBottom: 20,

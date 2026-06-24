@@ -1,9 +1,13 @@
-import { Controller, Get, Patch, Post, Param, Body, Query, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Controller, Get, Patch, Post, Param, Body, Query,
+  UseGuards, UploadedFile, UseInterceptors, HttpCode, HttpStatus,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { PlayersService } from './players.service';
+import { InvitationsService } from '../invitations/invitations.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -13,11 +17,14 @@ import { Public } from '../common/decorators/public.decorator';
 @ApiTags('Players')
 @Controller('players')
 export class PlayersController {
-  constructor(private readonly playersService: PlayersService) {}
+  constructor(
+    private readonly playersService: PlayersService,
+    private readonly invitationsService: InvitationsService,
+  ) {}
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'List players' })
+  @ApiOperation({ summary: 'List players (admin use)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'search', required: false })
@@ -27,6 +34,73 @@ export class PlayersController {
     @Query('search') search?: string,
   ) {
     return this.playersService.findAll(+page, +limit, search);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('search')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Search available players for match (global, not club-scoped)' })
+  @ApiQuery({ name: 'comuna', required: false })
+  @ApiQuery({ name: 'level', required: false })
+  @ApiQuery({ name: 'weekdays', required: false, type: Boolean })
+  @ApiQuery({ name: 'weekends', required: false, type: Boolean })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  searchAvailable(
+    @CurrentUser('id') userId: string,
+    @Query('comuna') comuna?: string,
+    @Query('level') level?: string,
+    @Query('weekdays') weekdays?: string,
+    @Query('weekends') weekends?: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    return this.playersService.searchAvailable(userId, {
+      comuna,
+      level,
+      availableWeekdays: weekdays === 'true',
+      availableWeekends: weekends === 'true',
+      page: +page,
+      limit: +limit,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/availability')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Quick-toggle availableForMatch (no body required; flips the flag)' })
+  toggleAvailability(@CurrentUser('id') userId: string) {
+    return this.playersService.toggleAvailability(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/availability/settings')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update detailed availability settings (weekdays/weekends/photo/comuna)' })
+  updateAvailabilitySettings(@CurrentUser('id') userId: string, @Body() body: any) {
+    return this.playersService.updateAvailabilitySettings(userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/invitations')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get my match invitations (sent and received)' })
+  getMyInvitations(@CurrentUser('id') userId: string) {
+    return this.invitationsService.getMyInvitations(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/invite')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Send a match invitation to a player' })
+  invite(
+    @CurrentUser('id') requesterId: string,
+    @Param('id') recipientUserId: string,
+    @Body('message') message?: string,
+  ) {
+    return this.invitationsService.sendInvitation(requesterId, recipientUserId, message);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

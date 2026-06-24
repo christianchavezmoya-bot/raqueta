@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 
@@ -66,7 +67,14 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg text-xs text-gray-500">
+          <p className="text-center text-sm text-gray-500 mt-4">
+            ¿No tienes cuenta?{' '}
+            <Link href="/register-club" className="text-brand-600 hover:underline font-medium">
+              Registra tu club (prueba gratuita)
+            </Link>
+          </p>
+
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg text-xs text-gray-500">
             <p className="font-medium mb-2">Cuentas de prueba:</p>
             <p>admin@clubtenislascondes.cl / Admin123!</p>
             <p>manager@clubtenislascondes.cl / Manager123!</p>

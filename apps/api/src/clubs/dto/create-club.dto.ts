@@ -1,5 +1,34 @@
-import { IsString, IsOptional, IsEmail, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsNumber, IsPhoneNumber, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class RegisterClubDto {
+  @ApiProperty({ example: 'Club Tenis Providencia' })
+  @IsString()
+  clubName: string;
+
+  @ApiProperty({ example: 'admin@clubprovidencia.cl' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'SecurePass123!' })
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @ApiProperty({ example: 'Ana González' })
+  @IsString()
+  displayName: string;
+
+  @ApiPropertyOptional({ example: '+56912345678' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'Providencia' })
+  @IsOptional()
+  @IsString()
+  city?: string;
+}
 
 export class CreateClubDto {
   @ApiProperty({ example: 'Club de Tenis Las Condes' })

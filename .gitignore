@@ -44,3 +44,7 @@ apps/api/generated/
 
 # Test coverage
 coverage/
+
+# Local file storage (uploaded media)
+apps/api/storage/
+storage/

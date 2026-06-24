@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── ENUMS ───────────────────────────────────────────────────────────────────
@@ -34,6 +33,8 @@ enum ClubStatus {
   INACTIVE
   PENDING
   SUSPENDED
+  TRIAL
+  LOCKED
 }
 
 enum SurfaceType {
@@ -117,6 +118,9 @@ enum NotificationType {
   MATCH_SCHEDULED
   RESULT_ENTERED
   MEMBERSHIP_EXPIRING
+  MATCH_INVITATION_RECEIVED
+  MATCH_INVITATION_ACCEPTED
+  MATCH_INVITATION_DECLINED
   GENERAL
 }
 
@@ -142,6 +146,20 @@ enum Gender {
   PREFER_NOT_TO_SAY
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum MatchLogType {
+  MATCH
+  TRAINING
+  COACHING
+  FITNESS
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -161,6 +179,12 @@ model User {
   passwordResetExpiry     DateTime? @map("password_reset_expiry")
   expoPushToken           String?   @map("expo_push_token")
   staffClubId             String?   @map("staff_club_id")
+
+  // 2FA (Stage 2b)
+  twoFactorEnabled    Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorCode       String?   @map("two_factor_code")
+  twoFactorExpiry     DateTime? @map("two_factor_expiry")
+  twoFactorLoginToken String?   @unique @map("two_factor_login_token")
 
   playerProfile     PlayerProfile?
   memberships       Membership[]
@@ -210,12 +234,25 @@ model PlayerProfile {
   category         String?
   homeClubId       String?     @map("home_club_id")
   publicVisibility Boolean     @default(true) @map("public_visibility")
+
+  // Stage 3 — player discovery
+  comuna            String?  @map("comuna")
+  availableForMatch Boolean  @default(false) @map("available_for_match")
+  availableWeekdays Boolean  @default(false) @map("available_weekdays")
+  availableWeekends Boolean  @default(false) @map("available_weekends")
+  showPhotoInSearch Boolean  @default(true)  @map("show_photo_in_search")
+
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   homeClub  Club?        @relation(fields: [homeClubId], references: [id])
   stats     PlayerStats?
+
+  sentInvitations     MatchInvitation[] @relation("SentInvitations")
+  receivedInvitations MatchInvitation[] @relation("ReceivedInvitations")
+  ownedMatchLogs      MatchLogEntry[]   @relation("OwnedMatchLogs")
+  opponentMatchLogs   MatchLogEntry[]   @relation("OpponentMatchLogs")
 
   @@map("player_profiles")
 }
@@ -245,6 +282,7 @@ model Club {
   slug        String     @unique
   status      ClubStatus @default(ACTIVE)
   ownerUserId String     @map("owner_user_id")
+  trialEndsAt DateTime?  @map("trial_ends_at")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
@@ -656,4 +694,45 @@ model AuditLog {
   actor User @relation("ActorLogs", fields: [actorUserId], references: [id])
 
   @@map("audit_logs")
+}
+
+// ─── MATCH INVITATIONS (Stage 3) ─────────────────────────────────────────────
+
+model MatchInvitation {
+  id          String           @id @default(uuid())
+  requesterId String           @map("requester_id")
+  recipientId String           @map("recipient_id")
+  status      InvitationStatus @default(PENDING)
+  message     String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  requester PlayerProfile @relation("SentInvitations", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient PlayerProfile @relation("ReceivedInvitations", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@map("match_invitations")
+}
+
+// ─── MATCH LOG (Stage 4) ─────────────────────────────────────────────────────
+
+model MatchLogEntry {
+  id           String       @id @default(uuid())
+  playerId     String       @map("player_id")
+  opponentId   String?      @map("opponent_id")
+  opponentName String?      @map("opponent_name")
+  type         MatchLogType @default(MATCH)
+  date         DateTime
+  durationMins Int?         @map("duration_mins")
+  location     String?
+  notes        String?
+  setsData     Json?        @map("sets_data")
+  playerWon    Boolean?     @map("player_won")
+  bestOf       Int          @default(3) @map("best_of")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  player   PlayerProfile  @relation("OwnedMatchLogs", fields: [playerId], references: [id], onDelete: Cascade)
+  opponent PlayerProfile? @relation("OpponentMatchLogs", fields: [opponentId], references: [id])
+
+  @@map("match_log_entries")
 }

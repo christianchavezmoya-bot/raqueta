@@ -9,17 +9,24 @@ import { useAuthStore } from '../src/stores/auth.store';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const login = useAuthStore(s => s.login);
+  const { login, verify2FA } = useAuthStore();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [step, setStep] = useState<'credentials' | '2fa'>('credentials');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) return;
     setLoading(true);
     try {
-      await login(email, password);
-      router.replace('/(tabs)');
+      const { twoFactorRequired } = await login(email, password);
+      if (twoFactorRequired) {
+        setStep('2fa');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message ?? 'Credenciales inválidas');
     } finally {
@@ -27,17 +34,71 @@ export default function LoginScreen() {
     }
   };
 
+  const handleVerify2FA = async () => {
+    if (otpCode.length !== 6) return;
+    setLoading(true);
+    try {
+      await verify2FA(otpCode);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      Alert.alert('Código inválido', err.response?.data?.message ?? 'Código incorrecto o expirado');
+      setOtpCode('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === '2fa') {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <Text style={styles.emoji}>🔑</Text>
+            <Text style={styles.title}>Verificación</Text>
+            <Text style={styles.subtitle}>Ingresa el código enviado a tu email</Text>
+          </View>
+          <View style={styles.form}>
+            <Text style={styles.formTitle}>Código de verificación</Text>
+            <Text style={styles.otpHint}>
+              Revisá tu correo. El código tiene 6 dígitos y expira en 10 minutos.
+            </Text>
+            <View style={styles.inputGroup}>
+              <TextInput
+                style={[styles.input, styles.otpInput]}
+                value={otpCode}
+                onChangeText={t => setOtpCode(t.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                placeholderTextColor="#9ca3af"
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, (loading || otpCode.length !== 6) && styles.buttonDisabled]}
+              onPress={handleVerify2FA}
+              disabled={loading || otpCode.length !== 6}
+            >
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verificar</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setStep('credentials'); setOtpCode(''); }} style={styles.registerLink}>
+              <Text style={styles.registerText}>← Volver al inicio de sesión</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Logo */}
         <View style={styles.header}>
           <Text style={styles.emoji}>🎾</Text>
           <Text style={styles.title}>Raqueta</Text>
           <Text style={styles.subtitle}>Tu comunidad de tenis</Text>
         </View>
 
-        {/* Form */}
         <View style={styles.form}>
           <Text style={styles.formTitle}>Iniciar sesión</Text>
 
@@ -72,11 +133,7 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Ingresar</Text>
-            )}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ingresar</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push('/register')} style={styles.registerLink}>
@@ -84,7 +141,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Demo */}
         <View style={styles.demo}>
           <Text style={styles.demoTitle}>Cuentas de prueba:</Text>
           <Text style={styles.demoText}>juan.perez@gmail.com / Player123!</Text>
@@ -108,6 +164,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15, shadowRadius: 16, elevation: 8,
   },
   formTitle: { fontSize: 20, fontWeight: '700', color: '#111827', marginBottom: 20 },
+  otpHint: { fontSize: 13, color: '#6b7280', marginBottom: 16 },
   inputGroup: { marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 6 },
   input: {
@@ -115,6 +172,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 15, color: '#111827', backgroundColor: '#fff',
   },
+  otpInput: { textAlign: 'center', fontSize: 28, fontWeight: '800', letterSpacing: 10 },
   button: {
     backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 8,

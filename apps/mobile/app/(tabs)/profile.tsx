@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
+  ActivityIndicator, Image, Switch, TextInput,
 } from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,8 +15,10 @@ export default function ProfileScreen() {
   const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [show2FADisable, setShow2FADisable] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
 
-  const { data: me } = useQuery({
+  const { data: me, refetch: refetchMe } = useQuery({
     queryKey: ['me-profile'],
     queryFn: async () => { const { data } = await api.get('/auth/me'); return data; },
   });
@@ -23,6 +26,18 @@ export default function ProfileScreen() {
   const { data: myReservations } = useQuery({
     queryKey: ['my-reservations-profile'],
     queryFn: async () => { const { data } = await api.get('/users/me/reservations?limit=5'); return data; },
+  });
+
+  const enable2FA = useMutation({
+    mutationFn: () => api.post('/auth/2fa/enable'),
+    onSuccess: () => { refetchMe(); Alert.alert('2FA activado', 'Se envió un código a tu email para confirmar. En el próximo login, necesitarás el código.'); },
+    onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'Error'),
+  });
+
+  const disable2FA = useMutation({
+    mutationFn: (password: string) => api.post('/auth/2fa/disable', { password }),
+    onSuccess: () => { refetchMe(); setShow2FADisable(false); setDisablePassword(''); Alert.alert('2FA desactivado'); },
+    onError: (err: any) => Alert.alert('Contraseña incorrecta', err.response?.data?.message ?? 'Error'),
   });
 
   const profile = me?.playerProfile;
@@ -149,6 +164,16 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {/* Match Log */}
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Registro personal</Text>
+        <TouchableOpacity style={s.menuItem} onPress={() => router.push('/match-log' as any)} activeOpacity={0.7}>
+          <Ionicons name="clipboard-outline" size={20} color="#7c3aed" />
+          <Text style={s.menuLabel}>Mi registro de partidos</Text>
+          <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      </View>
+
       {/* Menu */}
       <View style={s.section}>
         <Text style={s.sectionTitle}>Mi cuenta</Text>
@@ -164,6 +189,56 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* 2FA section */}
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Seguridad</Text>
+        <View style={s.menuItem}>
+          <Ionicons name="shield-outline" size={20} color="#374151" />
+          <Text style={s.menuLabel}>Verificación en 2 pasos</Text>
+          <Switch
+            style={{ marginLeft: 'auto' }}
+            value={!!me?.twoFactorEnabled}
+            onValueChange={val => {
+              if (val) {
+                Alert.alert('Activar 2FA', 'Se enviará un código a tu email para verificar. ¿Continuar?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Activar', onPress: () => enable2FA.mutate() },
+                ]);
+              } else {
+                setShow2FADisable(true);
+              }
+            }}
+            trackColor={{ false: '#d1d5db', true: '#16a34a' }}
+            disabled={enable2FA.isPending}
+          />
+        </View>
+        {show2FADisable && (
+          <View style={s.disableForm}>
+            <Text style={s.disableHint}>Ingresa tu contraseña para desactivar 2FA:</Text>
+            <TextInput
+              style={s.disableInput}
+              value={disablePassword}
+              onChangeText={setDisablePassword}
+              placeholder="Contraseña"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity style={s.disableCancelBtn} onPress={() => { setShow2FADisable(false); setDisablePassword(''); }}>
+                <Text style={s.disableCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.disableConfirmBtn, disable2FA.isPending && { opacity: 0.6 }]}
+                onPress={() => disable2FA.mutate(disablePassword)}
+                disabled={!disablePassword || disable2FA.isPending}
+              >
+                {disable2FA.isPending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.disableConfirmText}>Confirmar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
@@ -213,4 +288,11 @@ const s = StyleSheet.create({
   logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, padding: 14, borderRadius: 12, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', marginBottom: 8 },
   logoutText: { fontSize: 15, color: '#dc2626', fontWeight: '600' },
   emptyText: { color: '#9ca3af', fontSize: 14, textAlign: 'center', paddingVertical: 12 },
+  disableForm: { backgroundColor: '#fef2f2', borderRadius: 12, padding: 14, marginTop: 8, gap: 10 },
+  disableHint: { fontSize: 13, color: '#374151' },
+  disableInput: { borderWidth: 1, borderColor: '#fecaca', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#111827', backgroundColor: '#fff' },
+  disableCancelBtn: { flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, paddingVertical: 10, alignItems: 'center', backgroundColor: '#fff' },
+  disableCancelText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  disableConfirmBtn: { flex: 1, backgroundColor: '#dc2626', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  disableConfirmText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

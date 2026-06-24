@@ -7,13 +7,17 @@ interface User {
   email: string;
   role: string;
   playerProfile?: any;
+  twoFactorEnabled?: boolean;
 }
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  // 2FA intermediate state
+  pendingLoginToken: string | null;
+  login: (email: string, password: string) => Promise<{ twoFactorRequired: boolean }>;
+  verify2FA: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
 }
@@ -22,17 +26,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  pendingLoginToken: null,
 
   login: async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
+    if (data.twoFactorRequired) {
+      set({ pendingLoginToken: data.loginToken });
+      return { twoFactorRequired: true };
+    }
     await AsyncStorage.setItem('accessToken', data.accessToken);
     await AsyncStorage.setItem('refreshToken', data.refreshToken);
-    set({ user: data.user, isAuthenticated: true });
+    set({ user: data.user, isAuthenticated: true, pendingLoginToken: null });
+    return { twoFactorRequired: false };
+  },
+
+  verify2FA: async (code: string) => {
+    const { pendingLoginToken } = get();
+    if (!pendingLoginToken) throw new Error('No pending 2FA session');
+    const { data } = await api.post('/auth/2fa/verify', { loginToken: pendingLoginToken, code });
+    await AsyncStorage.setItem('accessToken', data.accessToken);
+    await AsyncStorage.setItem('refreshToken', data.refreshToken);
+    set({ user: data.user, isAuthenticated: true, pendingLoginToken: null });
   },
 
   logout: async () => {
     await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
-    set({ user: null, isAuthenticated: false });
+    set({ user: null, isAuthenticated: false, pendingLoginToken: null });
   },
 
   restoreSession: async () => {

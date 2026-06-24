@@ -17,6 +17,9 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Role } from '@prisma/client';
 
+const OTP_EXPIRY_MINUTES = 10;
+const OTP_MAX_ATTEMPTS = 5;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -32,7 +35,7 @@ export class AuthService {
 
     const hash = await bcrypt.hash(dto.password, 12);
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const user = await this.prisma.user.create({
       data: {
@@ -112,6 +115,11 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
+    // 2FA: if enabled, send OTP and return a reference token instead of JWT
+    if (user.twoFactorEnabled) {
+      return this.initiate2FA(user.id, user.email);
+    }
+
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.saveRefreshToken(user.id, tokens.refreshToken);
 
@@ -119,15 +127,103 @@ export class AuthService {
     return { user: userWithoutPassword, ...tokens };
   }
 
+  // ─── 2FA ─────────────────────────────────────────────────────────────────────
+
+  async enable2FA(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.twoFactorEnabled) throw new BadRequestException('2FA is already enabled');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+    return { message: '2FA enabled. An OTP will be required on each login.' };
+  }
+
+  async disable2FA(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.twoFactorEnabled) throw new BadRequestException('2FA is not enabled');
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Incorrect password');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorCode: null,
+        twoFactorExpiry: null,
+        twoFactorLoginToken: null,
+      },
+    });
+    return { message: '2FA disabled.' };
+  }
+
+  async verify2FA(loginToken: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { twoFactorLoginToken: loginToken },
+    });
+
+    if (!user) throw new UnauthorizedException('Invalid or expired 2FA session. Please log in again.');
+    if (!user.twoFactorExpiry || user.twoFactorExpiry < new Date()) {
+      throw new UnauthorizedException('OTP has expired. Please log in again.');
+    }
+    if (user.twoFactorCode !== code) {
+      throw new UnauthorizedException('Incorrect code.');
+    }
+
+    // Clear OTP fields
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: null,
+        twoFactorExpiry: null,
+        twoFactorLoginToken: null,
+      },
+    });
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    await this.saveRefreshToken(user.id, tokens.refreshToken);
+
+    const { passwordHash, ...safe } = user;
+    return { user: safe, ...tokens };
+  }
+
+  private async initiate2FA(userId: string, userEmail: string) {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    const loginToken = crypto.randomBytes(32).toString('hex');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorCode: code,
+        twoFactorExpiry: expiry,
+        twoFactorLoginToken: loginToken,
+      },
+    });
+
+    await this.email.send2FACode(userEmail, code);
+
+    return {
+      twoFactorRequired: true,
+      loginToken,
+      message: `A 6-digit code was sent to ${userEmail}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
+    };
+  }
+
+  // ─── PASSWORD RESET ───────────────────────────────────────────────────────────
+
   async forgotPassword(dto: ForgotPasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    // Always return the same message to avoid email enumeration
     if (!user || user.status !== 'ACTIVE') {
       return { message: 'If that email exists, a password reset link was sent.' };
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1h
+    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -158,11 +254,11 @@ export class AuthService {
       },
     });
 
-    // Invalidate all existing sessions after password change
     await this.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
-
     return { message: 'Password reset successfully. Please log in with your new password.' };
   }
+
+  // ─── SESSION ─────────────────────────────────────────────────────────────────
 
   async refresh(refreshToken: string) {
     const stored = await this.prisma.refreshToken.findUnique({ where: { token: refreshToken } });
@@ -192,7 +288,7 @@ export class AuthService {
       include: { playerProfile: { include: { stats: true } } },
     });
     if (!user) throw new UnauthorizedException();
-    const { passwordHash, ...safe } = user;
+    const { passwordHash, twoFactorCode, ...safe } = user;
     return safe;
   }
 

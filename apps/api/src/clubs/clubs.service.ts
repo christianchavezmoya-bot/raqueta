@@ -1,14 +1,26 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
-import { CreateClubDto, UpdateClubProfileDto } from './dto/create-club.dto';
+import { EmailService } from '../common/email/email.service';
+import { CreateClubDto, UpdateClubProfileDto, RegisterClubDto } from './dto/create-club.dto';
 import { ActingUser, assertClubScope } from '../common/utils/club-scope';
+import { Role } from '@prisma/client';
+
+const TRIAL_DAYS = 14;
 
 @Injectable()
 export class ClubsService {
   constructor(
     private prisma: PrismaService,
     private media: MediaService,
+    private email: EmailService,
   ) {}
 
   async findAll(page = 1, limit = 20) {
@@ -17,11 +29,11 @@ export class ClubsService {
       this.prisma.club.findMany({
         skip,
         take: limit,
-        where: { status: 'ACTIVE' },
+        where: { status: { in: ['ACTIVE', 'TRIAL'] } },
         include: { profile: true },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.club.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.club.count({ where: { status: { in: ['ACTIVE', 'TRIAL'] } } }),
     ]);
     return { data: clubs, total, page, limit };
   }
@@ -39,7 +51,7 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return club;
+    return { ...club, trialStatus: this.computeTrialStatus(club) };
   }
 
   async findBySlug(slug: string) {
@@ -54,7 +66,7 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return club;
+    return { ...club, trialStatus: this.computeTrialStatus(club) };
   }
 
   async create(dto: CreateClubDto, ownerUserId: string) {
@@ -70,6 +82,98 @@ export class ClubsService {
         profile: { create: {} },
       },
       include: { profile: true },
+    });
+  }
+
+  /**
+   * Public self-service registration: creates a CLUB_ADMIN user + Club in a
+   * single transaction, starts a 14-day trial (status=TRIAL), and sends email
+   * verification via the existing flow.
+   */
+  async register(dto: RegisterClubDto) {
+    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existingUser) throw new ConflictException('Email already registered');
+
+    const slug = this.slugify(dto.clubName);
+    const existingSlug = await this.prisma.club.findUnique({ where: { slug } });
+    if (existingSlug) {
+      throw new ConflictException('A club with a similar name already exists. Try a different name.');
+    }
+
+    const hash = await bcrypt.hash(dto.password, 12);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
+    const result = await this.prisma.$transaction(async tx => {
+      const user = await tx.user.create({
+        data: {
+          email: dto.email,
+          passwordHash: hash,
+          phone: dto.phone,
+          role: Role.CLUB_ADMIN,
+          status: 'PENDING_VERIFICATION',
+          emailVerificationToken: verificationToken,
+          emailVerificationExpiry: verificationExpiry,
+        },
+      });
+
+      const club = await tx.club.create({
+        data: {
+          name: dto.clubName,
+          slug,
+          ownerUserId: user.id,
+          status: 'TRIAL',
+          trialEndsAt,
+          profile: { create: { city: dto.city } },
+        },
+        include: { profile: true },
+      });
+
+      // Link staff to the new club so assertClubScope works immediately after verification
+      await tx.user.update({
+        where: { id: user.id },
+        data: { staffClubId: club.id },
+      });
+
+      // Create player profile so the dashboard doesn't break
+      await tx.playerProfile.create({
+        data: { userId: user.id, displayName: dto.displayName },
+      });
+
+      return { user, club };
+    });
+
+    await this.email.sendVerificationEmail(result.user.email, verificationToken);
+
+    return {
+      message: 'Club registered! Please verify your email to activate your 14-day free trial.',
+      clubId: result.club.id,
+      trialEndsAt,
+    };
+  }
+
+  /** SUPER_ADMIN only: extend or unlock a club trial */
+  async extendTrial(clubId: string, extraDays?: number) {
+    const club = await this.ensureExists(clubId);
+    const base = club.trialEndsAt && club.trialEndsAt > new Date() ? club.trialEndsAt : new Date();
+    const days = extraDays ?? TRIAL_DAYS;
+    const trialEndsAt = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+
+    return this.prisma.club.update({
+      where: { id: clubId },
+      data: { status: 'TRIAL', trialEndsAt },
+      select: { id: true, name: true, status: true, trialEndsAt: true },
+    });
+  }
+
+  /** SUPER_ADMIN only: promote club to full ACTIVE (manual upgrade) */
+  async unlock(clubId: string) {
+    await this.ensureExists(clubId);
+    return this.prisma.club.update({
+      where: { id: clubId },
+      data: { status: 'ACTIVE', trialEndsAt: null },
+      select: { id: true, name: true, status: true },
     });
   }
 
@@ -180,6 +284,15 @@ export class ClubsService {
     });
     if (!regular || regular.isClosed) return false;
     return timeStr >= regular.openTime && timeStr < regular.closeTime;
+  }
+
+  private computeTrialStatus(club: { status: string; trialEndsAt: Date | null }) {
+    if (club.status !== 'TRIAL') return null;
+    const now = new Date();
+    if (!club.trialEndsAt) return { expired: false, daysRemaining: null };
+    const ms = club.trialEndsAt.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(ms / (1000 * 60 * 60 * 24));
+    return { expired: daysRemaining <= 0, daysRemaining: Math.max(0, daysRemaining), endsAt: club.trialEndsAt };
   }
 
   private async ensureExists(id: string) {

@@ -42,6 +42,21 @@ export class EmailService {
     await this.send(to, subject, html, `Verifica tu cuenta: ${verifyUrl}`);
   }
 
+  async send2FACode(to: string, code: string): Promise<void> {
+    const subject = '🔑 Tu código de verificación — Raqueta';
+    const html = `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
+        <h2 style="color:#16a34a">Código de verificación</h2>
+        <p>Ingresa este código para completar tu inicio de sesión. Expira en 10 minutos.</p>
+        <div style="font-size:36px;font-weight:800;letter-spacing:10px;color:#111827;padding:20px 0">${code}</div>
+        <p style="color:#6b7280;font-size:12px">Si no solicitaste esto, ignora este mensaje.</p>
+        <hr style="border:none;border-top:1px solid #f3f4f6;margin:24px 0"/>
+        <p style="color:#9ca3af;font-size:11px">Raqueta — Plataforma de tenis</p>
+      </div>
+    `;
+    await this.send(to, subject, html, `Tu código de verificación: ${code}`);
+  }
+
   async sendPasswordResetEmail(to: string, token: string): Promise<void> {
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:3000');
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
