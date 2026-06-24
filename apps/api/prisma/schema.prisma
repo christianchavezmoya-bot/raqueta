@@ -160,6 +160,11 @@ enum MatchLogType {
   FITNESS
 }
 
+enum ClubMatchResultSource {
+  UPLOAD
+  MANUAL
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -186,22 +191,23 @@ model User {
   twoFactorExpiry     DateTime? @map("two_factor_expiry")
   twoFactorLoginToken String?   @unique @map("two_factor_login_token")
 
-  playerProfile     PlayerProfile?
-  memberships       Membership[]
-  reservations      Reservation[]   @relation("UserReservations")
-  createdReservations Reservation[] @relation("CreatedReservations")
-  payments          Payment[]       @relation("UserPayments")
-  confirmedPayments Payment[]       @relation("ConfirmedPayments")
-  notifications     Notification[]
-  instructorProfiles Instructor[]
-  ownedClubs        Club[]
-  auditLogs         AuditLog[]      @relation("ActorLogs")
-  refreshTokens     RefreshToken[]
+  playerProfile           PlayerProfile?
+  memberships             Membership[]
+  reservations            Reservation[]            @relation("UserReservations")
+  createdReservations     Reservation[]            @relation("CreatedReservations")
+  payments                Payment[]                @relation("UserPayments")
+  confirmedPayments       Payment[]                @relation("ConfirmedPayments")
+  notifications           Notification[]
+  instructorProfiles      Instructor[]
+  ownedClubs              Club[]
+  auditLogs               AuditLog[]               @relation("ActorLogs")
+  refreshTokens           RefreshToken[]
   tournamentRegistrations TournamentRegistration[]
-  matchesAsPlayerOne      Match[]   @relation("PlayerOneMatches")
-  matchesAsPlayerTwo      Match[]   @relation("PlayerTwoMatches")
-  wonMatches              Match[]   @relation("WonMatches")
+  matchesAsPlayerOne      Match[]                  @relation("PlayerOneMatches")
+  matchesAsPlayerTwo      Match[]                  @relation("PlayerTwoMatches")
+  wonMatches              Match[]                  @relation("WonMatches")
   rankings                Ranking[]
+  enteredClubMatchResults ClubMatchResult[]
 
   @@map("users")
 }
@@ -236,38 +242,46 @@ model PlayerProfile {
   publicVisibility Boolean     @default(true) @map("public_visibility")
 
   // Stage 3 — player discovery
-  comuna            String?  @map("comuna")
-  availableForMatch Boolean  @default(false) @map("available_for_match")
-  availableWeekdays Boolean  @default(false) @map("available_weekdays")
-  availableWeekends Boolean  @default(false) @map("available_weekends")
-  showPhotoInSearch Boolean  @default(true)  @map("show_photo_in_search")
+  comuna             String?   @map("comuna")
+  availableForMatch  Boolean   @default(false) @map("available_for_match")
+  availableWeekdays  Boolean   @default(false) @map("available_weekdays")
+  availableWeekends  Boolean   @default(false) @map("available_weekends")
+  showPhotoInSearch  Boolean   @default(true) @map("show_photo_in_search")
+  runPlayerId        String?   @map("run_player_id")
+  runRankCached      Int?      @map("run_rank_cached")
+  runPointsCached    Int?      @map("run_points_cached")
+  runAtpPointsCached Int?      @map("run_atp_points_cached")
+  runLastSyncedAt    DateTime? @map("run_last_synced_at")
 
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  homeClub  Club?        @relation(fields: [homeClubId], references: [id])
-  stats     PlayerStats?
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  homeClub Club?        @relation(fields: [homeClubId], references: [id])
+  stats    PlayerStats?
 
-  sentInvitations     MatchInvitation[] @relation("SentInvitations")
-  receivedInvitations MatchInvitation[] @relation("ReceivedInvitations")
-  ownedMatchLogs      MatchLogEntry[]   @relation("OwnedMatchLogs")
-  opponentMatchLogs   MatchLogEntry[]   @relation("OpponentMatchLogs")
+  sentInvitations      MatchInvitation[]  @relation("SentInvitations")
+  receivedInvitations  MatchInvitation[]  @relation("ReceivedInvitations")
+  ownedMatchLogs       MatchLogEntry[]    @relation("OwnedMatchLogs")
+  opponentMatchLogs    MatchLogEntry[]    @relation("OpponentMatchLogs")
+  clubRankingEntries   ClubRankingEntry[]
+  wonClubMatchResults  ClubMatchResult[]  @relation("ClubMatchWinner")
+  lostClubMatchResults ClubMatchResult[]  @relation("ClubMatchLoser")
 
   @@map("player_profiles")
 }
 
 model PlayerStats {
-  id               String  @id @default(uuid())
-  playerId         String  @unique @map("player_id")
-  matchesPlayed    Int     @default(0) @map("matches_played")
-  wins             Int     @default(0)
-  losses           Int     @default(0)
+  id                String @id @default(uuid())
+  playerId          String @unique @map("player_id")
+  matchesPlayed     Int    @default(0) @map("matches_played")
+  wins              Int    @default(0)
+  losses            Int    @default(0)
   tournamentsPlayed Int    @default(0) @map("tournaments_played")
-  titles           Int     @default(0)
-  rankingPoints    Int     @default(0) @map("ranking_points")
-  currentRank      Int?    @map("current_rank")
-  winRate          Float   @default(0) @map("win_rate")
+  titles            Int    @default(0)
+  rankingPoints     Int    @default(0) @map("ranking_points")
+  currentRank       Int?   @map("current_rank")
+  winRate           Float  @default(0) @map("win_rate")
 
   player PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
@@ -286,34 +300,37 @@ model Club {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  owner        User           @relation(fields: [ownerUserId], references: [id])
-  profile      ClubProfile?
-  photos       ClubPhoto[]
-  openingHours ClubOpeningHour[]
-  specialHours ClubSpecialHour[]
-  courts       Court[]
-  instructors  Instructor[]
-  memberships  Membership[]
-  membershipPlans MembershipPlan[]
-  reservations Reservation[]
-  payments     Payment[]
-  tournaments  Tournament[]
-  rankings     Ranking[]
-  playerProfiles PlayerProfile[]
+  owner              User               @relation(fields: [ownerUserId], references: [id])
+  profile            ClubProfile?
+  photos             ClubPhoto[]
+  openingHours       ClubOpeningHour[]
+  specialHours       ClubSpecialHour[]
+  courts             Court[]
+  instructors        Instructor[]
+  memberships        Membership[]
+  membershipPlans    MembershipPlan[]
+  reservations       Reservation[]
+  payments           Payment[]
+  tournaments        Tournament[]
+  rankings           Ranking[]
+  playerProfiles     PlayerProfile[]
+  clubRankingRules   ClubRankingRule[]
+  clubRankingEntries ClubRankingEntry[]
+  clubMatchResults   ClubMatchResult[]
 
   @@map("clubs")
 }
 
 model ClubProfile {
-  id                 String  @id @default(uuid())
-  clubId             String  @unique @map("club_id")
-  logoUrl            String? @map("logo_url")
-  bannerUrl          String? @map("banner_url")
+  id                 String   @id @default(uuid())
+  clubId             String   @unique @map("club_id")
+  logoUrl            String?  @map("logo_url")
+  bannerUrl          String?  @map("banner_url")
   description        String?
   address            String?
   city               String?
   region             String?
-  country            String  @default("Chile")
+  country            String   @default("Chile")
   latitude           Float?
   longitude          Float?
   phone              String?
@@ -322,7 +339,7 @@ model ClubProfile {
   instagram          String?
   website            String?
   rules              String?
-  cancellationPolicy String? @map("cancellation_policy")
+  cancellationPolicy String?  @map("cancellation_policy")
   paymentMethods     String[] @map("payment_methods")
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -343,12 +360,12 @@ model ClubPhoto {
 }
 
 model ClubOpeningHour {
-  id          String  @id @default(uuid())
-  clubId      String  @map("club_id")
-  dayOfWeek   Int     @map("day_of_week")
-  openTime    String  @map("open_time")
-  closeTime   String  @map("close_time")
-  isClosed    Boolean @default(false) @map("is_closed")
+  id        String  @id @default(uuid())
+  clubId    String  @map("club_id")
+  dayOfWeek Int     @map("day_of_week")
+  openTime  String  @map("open_time")
+  closeTime String  @map("close_time")
+  isClosed  Boolean @default(false) @map("is_closed")
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
@@ -385,7 +402,7 @@ model Court {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  club         Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club         Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
   pricing      CourtPricing[]
   blocks       CourtBlock[]
   reservations Reservation[]
@@ -395,13 +412,13 @@ model Court {
 }
 
 model CourtPricing {
-  id           String  @id @default(uuid())
-  courtId      String  @map("court_id")
-  userType     String  @map("user_type")
+  id           String @id @default(uuid())
+  courtId      String @map("court_id")
+  userType     String @map("user_type")
   price        Float
-  currency     String  @default("CLP")
-  peakPrice    Float?  @map("peak_price")
-  offPeakPrice Float?  @map("off_peak_price")
+  currency     String @default("CLP")
+  peakPrice    Float? @map("peak_price")
+  offPeakPrice Float? @map("off_peak_price")
 
   court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
 
@@ -410,14 +427,14 @@ model CourtPricing {
 }
 
 model CourtBlock {
-  id          String         @id @default(uuid())
-  courtId     String         @map("court_id")
-  startTime   DateTime       @map("start_time")
-  endTime     DateTime       @map("end_time")
-  reason      String?
-  blockType   CourtBlockType @default(MAINTENANCE) @map("block_type")
-  createdBy   String         @map("created_by")
-  createdAt   DateTime       @default(now()) @map("created_at")
+  id        String         @id @default(uuid())
+  courtId   String         @map("court_id")
+  startTime DateTime       @map("start_time")
+  endTime   DateTime       @map("end_time")
+  reason    String?
+  blockType CourtBlockType @default(MAINTENANCE) @map("block_type")
+  createdBy String         @map("created_by")
+  createdAt DateTime       @default(now()) @map("created_at")
 
   court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
 
@@ -427,20 +444,20 @@ model CourtBlock {
 // ─── INSTRUCTORS ─────────────────────────────────────────────────────────────
 
 model Instructor {
-  id              String  @id @default(uuid())
-  clubId          String  @map("club_id")
-  userId          String? @map("user_id")
+  id              String   @id @default(uuid())
+  clubId          String   @map("club_id")
+  userId          String?  @map("user_id")
   name            String
-  photoUrl        String? @map("photo_url")
+  photoUrl        String?  @map("photo_url")
   bio             String?
-  experienceYears Int     @default(0) @map("experience_years")
+  experienceYears Int      @default(0) @map("experience_years")
   specialties     String[]
   certifications  String[]
-  hourlyRate      Float?  @map("hourly_rate")
-  active          Boolean @default(true)
+  hourlyRate      Float?   @map("hourly_rate")
+  active          Boolean  @default(true)
 
-  club         Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  user         User?                   @relation(fields: [userId], references: [id], map: "instructor_user_fk")
+  club         Club                     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user         User?                    @relation(fields: [userId], references: [id], map: "instructor_user_fk")
   availability InstructorAvailability[]
 
   @@map("instructors")
@@ -514,11 +531,11 @@ model Reservation {
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 
-  club      Club      @relation(fields: [clubId], references: [id])
-  court     Court     @relation(fields: [courtId], references: [id])
-  user      User      @relation("UserReservations", fields: [userId], references: [id])
-  createdByUser User  @relation("CreatedReservations", fields: [createdBy], references: [id])
-  payments  Payment[]
+  club          Club      @relation(fields: [clubId], references: [id])
+  court         Court     @relation(fields: [courtId], references: [id])
+  user          User      @relation("UserReservations", fields: [userId], references: [id])
+  createdByUser User      @relation("CreatedReservations", fields: [createdBy], references: [id])
+  payments      Payment[]
 
   @@map("reservations")
 }
@@ -543,11 +560,11 @@ model Payment {
   createdAt                DateTime      @default(now()) @map("created_at")
   updatedAt                DateTime      @updatedAt @map("updated_at")
 
-  club         Club          @relation(fields: [clubId], references: [id])
-  user         User          @relation("UserPayments", fields: [userId], references: [id])
-  reservation  Reservation?  @relation(fields: [reservationId], references: [id])
-  membership   Membership?   @relation(fields: [membershipId], references: [id])
-  confirmedByUser User?      @relation("ConfirmedPayments", fields: [confirmedBy], references: [id])
+  club                   Club                    @relation(fields: [clubId], references: [id])
+  user                   User                    @relation("UserPayments", fields: [userId], references: [id])
+  reservation            Reservation?            @relation(fields: [reservationId], references: [id])
+  membership             Membership?             @relation(fields: [membershipId], references: [id])
+  confirmedByUser        User?                   @relation("ConfirmedPayments", fields: [confirmedBy], references: [id])
   tournamentRegistration TournamentRegistration? @relation(fields: [tournamentRegistrationId], references: [id])
 
   @@map("payments")
@@ -556,23 +573,23 @@ model Payment {
 // ─── TOURNAMENTS ─────────────────────────────────────────────────────────────
 
 model Tournament {
-  id                   String           @id @default(uuid())
-  clubId               String           @map("club_id")
-  name                 String
-  description          String?
-  startDate            DateTime         @map("start_date")
-  endDate              DateTime         @map("end_date")
-  registrationOpenDate DateTime?        @map("registration_open_date")
-  registrationCloseDate DateTime?       @map("registration_close_date")
-  status               TournamentStatus @default(DRAFT)
-  format               TournamentFormat @default(SINGLE_ELIMINATION)
-  price                Float            @default(0)
-  maxPlayers           Int?             @map("max_players")
-  createdBy            String           @map("created_by")
-  createdAt            DateTime         @default(now()) @map("created_at")
-  updatedAt            DateTime         @updatedAt @map("updated_at")
+  id                    String           @id @default(uuid())
+  clubId                String           @map("club_id")
+  name                  String
+  description           String?
+  startDate             DateTime         @map("start_date")
+  endDate               DateTime         @map("end_date")
+  registrationOpenDate  DateTime?        @map("registration_open_date")
+  registrationCloseDate DateTime?        @map("registration_close_date")
+  status                TournamentStatus @default(DRAFT)
+  format                TournamentFormat @default(SINGLE_ELIMINATION)
+  price                 Float            @default(0)
+  maxPlayers            Int?             @map("max_players")
+  createdBy             String           @map("created_by")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
 
-  club          Club                    @relation(fields: [clubId], references: [id])
+  club          Club                     @relation(fields: [clubId], references: [id])
   categories    TournamentCategory[]
   registrations TournamentRegistration[]
   matches       Match[]
@@ -590,7 +607,7 @@ model TournamentCategory {
   ageGroup     String? @map("age_group")
   maxPlayers   Int?    @map("max_players")
 
-  tournament    Tournament              @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament    Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   registrations TournamentRegistration[]
   matches       Match[]
 
@@ -598,14 +615,14 @@ model TournamentCategory {
 }
 
 model TournamentRegistration {
-  id           String        @id @default(uuid())
-  tournamentId String        @map("tournament_id")
-  categoryId   String        @map("category_id")
-  playerId     String        @map("player_id")
-  status       String        @default("PENDING")
+  id            String        @id @default(uuid())
+  tournamentId  String        @map("tournament_id")
+  categoryId    String        @map("category_id")
+  playerId      String        @map("player_id")
+  status        String        @default("PENDING")
   paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
-  seedNumber   Int?          @map("seed_number")
-  registeredAt DateTime      @default(now()) @map("registered_at")
+  seedNumber    Int?          @map("seed_number")
+  registeredAt  DateTime      @default(now()) @map("registered_at")
 
   tournament Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   category   TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -647,13 +664,13 @@ model Match {
 // ─── RANKINGS ────────────────────────────────────────────────────────────────
 
 model Ranking {
-  id       String  @id @default(uuid())
-  clubId   String  @map("club_id")
-  playerId String  @map("player_id")
-  category String
-  points   Int     @default(0)
-  rank     Int?
-  season   String
+  id        String   @id @default(uuid())
+  clubId    String   @map("club_id")
+  playerId  String   @map("player_id")
+  category  String
+  points    Int      @default(0)
+  rank      Int?
+  season    String
   updatedAt DateTime @updatedAt @map("updated_at")
 
   club   Club @relation(fields: [clubId], references: [id])
@@ -664,6 +681,65 @@ model Ranking {
 }
 
 // ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
+
+model ClubRankingRule {
+  id           String   @id @default(uuid())
+  clubId       String   @map("club_id")
+  categoryKey  String   @map("category_key")
+  label        String
+  winnerPoints Int      @map("winner_points")
+  loserPoints  Int      @map("loser_points")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, categoryKey])
+  @@map("club_ranking_rules")
+}
+
+model ClubRankingEntry {
+  id          String   @id @default(uuid())
+  clubId      String   @map("club_id")
+  playerId    String   @map("player_id")
+  rank        Int
+  totalPoints Int      @default(0) @map("total_points")
+  gamesPlayed Int      @default(0) @map("games_played")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  club   Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  player PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, playerId])
+  @@index([clubId, rank])
+  @@map("club_ranking_entries")
+}
+
+model ClubMatchResult {
+  id              String                @id @default(uuid())
+  clubId          String                @map("club_id")
+  winnerPlayerId  String?               @map("winner_player_id")
+  winnerNameRaw   String                @map("winner_name_raw")
+  loserPlayerId   String?               @map("loser_player_id")
+  loserNameRaw    String                @map("loser_name_raw")
+  categoryKey     String                @map("category_key")
+  setScores       Json?                 @map("set_scores")
+  recordedAt      DateTime              @map("recorded_at")
+  source          ClubMatchResultSource
+  enteredByUserId String                @map("entered_by_user_id")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  club          Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  winnerPlayer  PlayerProfile? @relation("ClubMatchWinner", fields: [winnerPlayerId], references: [id], onDelete: SetNull)
+  loserPlayer   PlayerProfile? @relation("ClubMatchLoser", fields: [loserPlayerId], references: [id], onDelete: SetNull)
+  enteredByUser User           @relation(fields: [enteredByUserId], references: [id], onDelete: Restrict)
+
+  @@index([clubId, categoryKey])
+  @@index([clubId, recordedAt])
+  @@map("club_match_results")
+}
 
 model Notification {
   id        String           @id @default(uuid())

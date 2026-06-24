@@ -1,12 +1,25 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
+import { TenisChileService } from '../common/integrations/tenischile/tenischile.service';
+
+const RUN_REFRESH_HOURS = 24;
 
 @Injectable()
 export class PlayersService {
+  private readonly logger = new Logger(PlayersService.name);
+
   constructor(
     private prisma: PrismaService,
     private media: MediaService,
+    private tenisChile: TenisChileService,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
@@ -19,7 +32,7 @@ export class PlayersService {
         skip,
         take: limit,
         where: { ...where, playerProfile: { isNot: null } },
-        include: { playerProfile: { include: { stats: true } } },
+        include: { playerProfile: { include: { stats: true, homeClub: { select: { id: true, name: true } } } } },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.user.count({ where: { ...where, playerProfile: { isNot: null } } }),
@@ -27,12 +40,6 @@ export class PlayersService {
     return { data: users.map(u => { const { passwordHash, ...rest } = u; return rest; }), total, page, limit };
   }
 
-  /**
-   * Global player discovery search (Stage 3).
-   * Enforces: publicVisibility=true, availableForMatch=true.
-   * Strips phone numbers always. Strips profile photo URL when showPhotoInSearch=false.
-   * Excludes the requester from results.
-   */
   async searchAvailable(requesterId: string, filters: {
     comuna?: string;
     level?: string;
@@ -77,7 +84,6 @@ export class PlayersService {
         bio: true,
         homeClub: { select: { id: true, name: true } },
         stats: { select: { matchesPlayed: true, wins: true, rankingPoints: true } },
-        // Never expose user phone
         user: { select: { id: true } },
       },
       orderBy: { updatedAt: 'desc' },
@@ -87,7 +93,6 @@ export class PlayersService {
 
     const sanitized = profiles.map(p => ({
       ...p,
-      // Honour showPhotoInSearch at the API level — not just client-side
       profilePhotoUrl: p.showPhotoInSearch ? p.profilePhotoUrl : null,
     }));
 
@@ -114,6 +119,138 @@ export class PlayersService {
     const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundException('Profile not found');
     return this.prisma.playerProfile.update({ where: { userId }, data });
+  }
+
+  async linkRunProfile(userId: string, value: string) {
+    const profile = await this.requireProfile(userId);
+    const playerId = this.tenisChile.parsePlayerId(value);
+    if (!playerId) throw new BadRequestException('Enter a valid TenisChile profile URL or numeric RUN player ID');
+
+    let snapshot;
+    try {
+      snapshot = await this.tenisChile.fetchPlayerRanking(playerId);
+    } catch (error) {
+      this.logger.warn(`RUN link validation failed for ${playerId}: ${String(error)}`);
+      throw new BadGatewayException('Could not verify that RUN profile right now');
+    }
+
+    if (!snapshot) {
+      throw new BadRequestException('That TenisChile profile could not be found or parsed');
+    }
+
+    const updated = await this.prisma.playerProfile.update({
+      where: { id: profile.id },
+      data: {
+        runPlayerId: playerId,
+        runRankCached: snapshot.rank,
+        runPointsCached: snapshot.points,
+        runAtpPointsCached: snapshot.atpPoints,
+        runLastSyncedAt: new Date(),
+      },
+    });
+
+    return {
+      linked: true,
+      profile: this.buildRunProfileResponse(updated, snapshot.name),
+      message: 'RUN profile linked successfully',
+    };
+  }
+
+  async refreshRunProfile(userId: string) {
+    const profile = await this.requireProfile(userId);
+    if (!profile.runPlayerId) throw new BadRequestException('No RUN profile is linked');
+
+    const nextRefreshAvailableAt = this.getNextRefreshAvailableAt(profile.runLastSyncedAt);
+    if (nextRefreshAvailableAt && nextRefreshAvailableAt > new Date()) {
+      return {
+        linked: true,
+        rateLimited: true,
+        nextRefreshAvailableAt,
+        profile: this.buildRunProfileResponse(profile),
+        message: 'RUN profile was refreshed recently. Please try again later.',
+      };
+    }
+
+    try {
+      const snapshot = await this.tenisChile.fetchPlayerRanking(profile.runPlayerId);
+      if (!snapshot) {
+        return {
+          linked: true,
+          refreshed: false,
+          nextRefreshAvailableAt: null,
+          profile: this.buildRunProfileResponse(profile),
+          message: 'Could not refresh RUN data right now. Showing the last cached snapshot.',
+        };
+      }
+
+      const updated = await this.prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          runRankCached: snapshot.rank,
+          runPointsCached: snapshot.points,
+          runAtpPointsCached: snapshot.atpPoints,
+          runLastSyncedAt: new Date(),
+        },
+      });
+
+      return {
+        linked: true,
+        refreshed: true,
+        nextRefreshAvailableAt: this.getNextRefreshAvailableAt(updated.runLastSyncedAt),
+        profile: this.buildRunProfileResponse(updated, snapshot.name),
+        message: 'RUN profile refreshed',
+      };
+    } catch (error) {
+      this.logger.error(`RUN refresh failed for profile ${profile.id}`, error as any);
+      return {
+        linked: true,
+        refreshed: false,
+        nextRefreshAvailableAt: null,
+        profile: this.buildRunProfileResponse(profile),
+        message: 'Could not refresh RUN data right now. Showing the last cached snapshot.',
+      };
+    }
+  }
+
+  async unlinkRunProfile(userId: string) {
+    const profile = await this.requireProfile(userId);
+    await this.prisma.playerProfile.update({
+      where: { id: profile.id },
+      data: {
+        runPlayerId: null,
+        runRankCached: null,
+        runPointsCached: null,
+        runAtpPointsCached: null,
+        runLastSyncedAt: null,
+      },
+    });
+
+    return { linked: false, message: 'RUN profile unlinked' };
+  }
+
+  async getMyClubRanking(userId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      include: {
+        homeClub: { select: { id: true, name: true } },
+        clubRankingEntries: {
+          include: {
+            club: { select: { id: true, name: true } },
+          },
+          orderBy: { rank: 'asc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!profile) throw new NotFoundException('Profile not found');
+    const entry = profile.clubRankingEntries.find(item => item.clubId === profile.homeClubId) ?? profile.clubRankingEntries[0] ?? null;
+
+    return {
+      club: profile.homeClub,
+      entry,
+      linkedPlayerProfileId: profile.id,
+    };
   }
 
   async findPublicProfile(userId: string) {
@@ -172,5 +309,33 @@ export class PlayersService {
     });
     if (!profile) throw new NotFoundException('Player not found');
     return profile.stats;
+  }
+
+  private async requireProfile(userId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
+    if (!profile) throw new NotFoundException('Profile not found');
+    return profile;
+  }
+
+  private getNextRefreshAvailableAt(lastSyncedAt: Date | null) {
+    if (!lastSyncedAt) return null;
+    return new Date(lastSyncedAt.getTime() + RUN_REFRESH_HOURS * 60 * 60 * 1000);
+  }
+
+  private buildRunProfileResponse(profile: {
+    runPlayerId: string | null;
+    runRankCached: number | null;
+    runPointsCached: number | null;
+    runAtpPointsCached: number | null;
+    runLastSyncedAt: Date | null;
+  }, name?: string) {
+    return {
+      runPlayerId: profile.runPlayerId,
+      rank: profile.runRankCached,
+      points: profile.runPointsCached,
+      atpPoints: profile.runAtpPointsCached,
+      lastSyncedAt: profile.runLastSyncedAt,
+      name: name ?? null,
+    };
   }
 }

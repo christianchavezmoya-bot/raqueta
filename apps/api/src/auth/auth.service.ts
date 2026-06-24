@@ -285,7 +285,7 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { playerProfile: { include: { stats: true } } },
+      include: { playerProfile: { include: { stats: true, homeClub: { select: { id: true, name: true } } } } },
     });
     if (!user) throw new UnauthorizedException();
     const { passwordHash, twoFactorCode, ...safe } = user;

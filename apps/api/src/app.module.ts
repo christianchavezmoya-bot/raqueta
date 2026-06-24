@@ -22,6 +22,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { MatchLogModule } from './match-log/match-log.module';
+import { ClubRankingsModule } from './club-rankings/club-rankings.module';
 
 @Module({
   providers: [
@@ -52,6 +53,7 @@ import { MatchLogModule } from './match-log/match-log.module';
     ReportsModule,
     InvitationsModule,
     MatchLogModule,
+    ClubRankingsModule,
   ],
 })
 export class AppModule {}

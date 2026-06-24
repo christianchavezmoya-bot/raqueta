@@ -17,6 +17,7 @@ export default function ProfileScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [show2FADisable, setShow2FADisable] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
+  const [runValue, setRunValue] = useState('');
 
   const { data: me, refetch: refetchMe } = useQuery({
     queryKey: ['me-profile'],
@@ -38,6 +39,28 @@ export default function ProfileScreen() {
     mutationFn: (password: string) => api.post('/auth/2fa/disable', { password }),
     onSuccess: () => { refetchMe(); setShow2FADisable(false); setDisablePassword(''); Alert.alert('2FA desactivado'); },
     onError: (err: any) => Alert.alert('Contraseña incorrecta', err.response?.data?.message ?? 'Error'),
+  });
+
+
+  const linkRun = useMutation({
+    mutationFn: (value: string) => api.post('/players/me/run-link', { value }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['me-profile'] }); setRunValue(''); Alert.alert('RUN vinculado'); },
+    onError: (err: any) => Alert.alert('No se pudo vincular', err.response?.data?.message ?? 'Error'),
+  });
+
+  const refreshRun = useMutation({
+    mutationFn: () => api.post('/players/me/run-link/refresh'),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['me-profile'] });
+      Alert.alert('RUN', res.data?.message ?? 'Actualizado');
+    },
+    onError: (err: any) => Alert.alert('No se pudo actualizar', err.response?.data?.message ?? 'Error'),
+  });
+
+  const unlinkRun = useMutation({
+    mutationFn: () => api.delete('/players/me/run-link'),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['me-profile'] }); Alert.alert('RUN desvinculado'); },
+    onError: (err: any) => Alert.alert('No se pudo desvincular', err.response?.data?.message ?? 'Error'),
   });
 
   const profile = me?.playerProfile;
@@ -174,6 +197,53 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>National Ranking (RUN)</Text>
+        {profile?.runPlayerId ? (
+          <View style={s.runCard}>
+            <Text style={s.runLabel}>Perfil vinculado: #{profile.runPlayerId}</Text>
+            <View style={s.runStatsRow}>
+              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runRankCached ?? '?'}</Text><Text style={s.runStatLabel}>RUN</Text></View>
+              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runPointsCached ?? '?'}</Text><Text style={s.runStatLabel}>Puntos</Text></View>
+              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runAtpPointsCached ?? '?'}</Text><Text style={s.runStatLabel}>ATP</Text></View>
+            </View>
+            <Text style={s.runHint}>?ltima actualizaci?n: {profile.runLastSyncedAt ? new Date(profile.runLastSyncedAt).toLocaleString('es-CL') : 'Sin sincronizar'}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity style={s.runRefreshBtn} onPress={() => refreshRun.mutate()} disabled={refreshRun.isPending}>
+                <Text style={s.runRefreshText}>{refreshRun.isPending ? 'Actualizando...' : 'Actualizar RUN'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.runUnlinkBtn} onPress={() => unlinkRun.mutate()} disabled={unlinkRun.isPending}>
+                <Text style={s.runUnlinkText}>Desvincular</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={s.runCard}>
+            <Text style={s.runHint}>Pega tu URL o ID de perfil p?blico de TenisChile.</Text>
+            <TextInput
+              style={s.disableInput}
+              value={runValue}
+              onChangeText={setRunValue}
+              placeholder="https://www.tenischile.com/jugador/..."
+              placeholderTextColor="#9ca3af"
+            />
+            <TouchableOpacity style={s.runRefreshBtn} onPress={() => linkRun.mutate(runValue)} disabled={!runValue || linkRun.isPending}>
+              <Text style={s.runRefreshText}>{linkRun.isPending ? 'Vinculando...' : 'Vincular RUN'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Mi Club</Text>
+        <TouchableOpacity style={s.menuItem} onPress={() => router.push('/club-ranking' as any)} activeOpacity={0.7}>
+          <Ionicons name="podium-outline" size={20} color="#16a34a" />
+          <Text style={s.menuLabel}>Ver ranking interno del club</Text>
+          <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      </View>
+
       {/* Menu */}
       <View style={s.section}>
         <Text style={s.sectionTitle}>Mi cuenta</Text>
@@ -295,4 +365,15 @@ const s = StyleSheet.create({
   disableCancelText: { fontSize: 14, fontWeight: '600', color: '#374151' },
   disableConfirmBtn: { flex: 1, backgroundColor: '#dc2626', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   disableConfirmText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  runCard: { backgroundColor: '#fff', borderRadius: 14, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
+  runLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  runHint: { fontSize: 13, color: '#6b7280', marginTop: 6 },
+  runStatsRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  runStat: { flex: 1, backgroundColor: '#f0fdf4', borderRadius: 12, padding: 12, alignItems: 'center' },
+  runStatValue: { fontSize: 20, fontWeight: '800', color: '#166534' },
+  runStatLabel: { fontSize: 12, color: '#166534', marginTop: 3 },
+  runRefreshBtn: { marginTop: 12, backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 11, alignItems: 'center', flex: 1 },
+  runRefreshText: { color: '#fff', fontWeight: '700' },
+  runUnlinkBtn: { marginTop: 12, backgroundColor: '#fff5f5', borderRadius: 10, paddingVertical: 11, alignItems: 'center', flex: 1, borderWidth: 1, borderColor: '#fecaca' },
+  runUnlinkText: { color: '#dc2626', fontWeight: '700' },
 });
