@@ -82,7 +82,7 @@ export class InvitationsService {
       this.prisma.matchInvitation.findMany({
         where: { requesterId: profile.id },
         include: {
-          recipient: { select: { displayName: true, level: true, profilePhotoUrl: true } },
+          recipient: { select: { displayName: true, level: true, profilePhotoUrl: true, showPhotoInSearch: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -111,7 +111,28 @@ export class InvitationsService {
       }),
     );
 
-    return { received: receivedWithPhone, sent };
+    const sentWithPhone = await Promise.all(
+      sent.map(async inv => {
+        let phone: string | null = null;
+        if (inv.status === 'ACCEPTED') {
+          const recipientUser = await this.prisma.user.findFirst({
+            where: { playerProfile: { id: inv.recipientId } },
+            select: { phone: true },
+          });
+          phone = recipientUser?.phone ?? null;
+        }
+        return {
+          ...inv,
+          recipient: {
+            ...inv.recipient,
+            profilePhotoUrl: inv.recipient.showPhotoInSearch ? inv.recipient.profilePhotoUrl : null,
+            phone,
+          },
+        };
+      }),
+    );
+
+    return { received: receivedWithPhone, sent: sentWithPhone };
   }
 
   async accept(invitationId: string, userId: string) {

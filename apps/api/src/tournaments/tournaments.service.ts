@@ -19,11 +19,29 @@ export class TournamentsService {
       where: { id },
       include: {
         club: { include: { profile: true } },
-        categories: true,
+        categories: {
+          include: {
+            registrations: {
+              include: {
+                player: { select: { id: true, email: true, playerProfile: true } },
+              },
+              orderBy: { registeredAt: 'asc' },
+            },
+          },
+        },
         registrations: {
           include: { player: { select: { id: true, email: true, playerProfile: true } }, category: true },
         },
-        matches: { include: { court: true } },
+        matches: {
+          include: {
+            court: true,
+            playerOne: { select: { id: true, email: true, playerProfile: true } },
+            playerTwo: { select: { id: true, email: true, playerProfile: true } },
+            winner: { select: { id: true, email: true, playerProfile: true } },
+            category: true,
+          },
+          orderBy: [{ round: 'asc' }, { scheduledTime: 'asc' }],
+        },
       },
     });
     if (!t) throw new NotFoundException('Tournament not found');
