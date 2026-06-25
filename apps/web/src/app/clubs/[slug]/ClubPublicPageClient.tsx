@@ -1,0 +1,189 @@
+'use client';
+
+import Link from 'next/link';
+import { useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { MapPin, CalendarDays, Users, Clock3, Trophy } from 'lucide-react';
+import { toast } from 'sonner';
+import api from '@/lib/api';
+import { getContrastText, resolveClubAccent, withAlpha } from '@/lib/club-accent';
+import { usePublicClubBySlug } from '@/hooks/use-club';
+
+export default function ClubPublicPageClient({ slug }: { slug: string }) {
+  const [selectedCourt, setSelectedCourt] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { data: club, isLoading } = usePublicClubBySlug(slug);
+
+  const accentColor = resolveClubAccent(club?.profile?.resolvedAccentColor ?? club?.profile?.accentColor);
+  const accentText = getContrastText(accentColor);
+  const accentSoft = withAlpha(accentColor, '14');
+  const accentBorder = withAlpha(accentColor, '33');
+
+  const availability = useQuery({
+    queryKey: ['club-public-availability', club?.id, selectedCourt, selectedDate],
+    queryFn: async () => {
+      const { data } = await api.get(`/clubs/${club.id}/availability?courtId=${selectedCourt}&date=${selectedDate}`);
+      return data;
+    },
+    enabled: !!club?.id && !!selectedCourt,
+  });
+
+  const reserve = useMutation({
+    mutationFn: async (slot: { startTime: string; endTime: string }) => {
+      const { data } = await api.post('/reservations', {
+        courtId: selectedCourt,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      });
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('Reserva creada correctamente');
+      availability.refetch();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'No se pudo completar la reserva'),
+  });
+
+  if (isLoading) return <div className="mx-auto max-w-6xl px-6 py-16">Cargando club...</div>;
+  if (!club) return <div className="mx-auto max-w-6xl px-6 py-16">Club no encontrado.</div>;
+
+  const courts = club.courts ?? [];
+  const instructors = club.instructors ?? [];
+
+  return (
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faf7_0%,#ffffff_22%,#f4f4f5_100%)]">
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="overflow-hidden rounded-[32px] border border-white/70 bg-white shadow-[0_20px_80px_rgba(17,24,39,0.08)]">
+          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="p-8 sm:p-12">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-gray-500">Club de tenis</p>
+              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-gray-950 sm:text-5xl">{club.name}</h1>
+              <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                {club.profile?.city && <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4" /> {club.profile.city}</span>}
+                {club.openingHours?.length > 0 && <span className="inline-flex items-center gap-2"><Clock3 className="h-4 w-4" /> {club.openingHours.length} días configurados</span>}
+                <span className="inline-flex items-center gap-2"><Trophy className="h-4 w-4" /> {courts.length} canchas activas</span>
+              </div>
+              {club.profile?.description && <p className="mt-8 max-w-2xl text-base leading-7 text-gray-600">{club.profile.description}</p>}
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="#booking" className="inline-flex items-center rounded-full px-5 py-3 text-sm font-semibold shadow-sm transition-transform hover:-translate-y-0.5" style={{ backgroundColor: accentColor, color: accentText }}>
+                  Reservar en este club
+                </Link>
+                {club.profile?.website && (
+                  <a href={club.profile.website} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-full border px-5 py-3 text-sm font-semibold text-gray-700" style={{ borderColor: accentBorder, backgroundColor: accentSoft }}>
+                    Sitio del club
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="p-8 sm:p-10" style={{ backgroundColor: accentSoft }}>
+              <div className="rounded-[28px] border bg-white/90 p-6 backdrop-blur" style={{ borderColor: accentBorder }}>
+                <p className="text-sm font-semibold text-gray-500">Datos de contacto</p>
+                <div className="mt-4 space-y-3 text-sm text-gray-700">
+                  {club.profile?.address && <p>{club.profile.address}</p>}
+                  {club.profile?.phone && <p>{club.profile.phone}</p>}
+                  {club.profile?.email && <p>{club.profile.email}</p>}
+                </div>
+                <div className="mt-8 rounded-2xl p-5" style={{ backgroundColor: accentColor, color: accentText }}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em]">Acento del club</p>
+                  <p className="mt-3 text-2xl font-semibold">{club.profile?.resolvedAccentColor ?? accentColor}</p>
+                  <p className="mt-2 text-sm">Este color solo se aplica a la experiencia pública y de reserva del club.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-6xl gap-6 px-6 pb-16 lg:grid-cols-[0.92fr_1.08fr]">
+        <div className="space-y-6">
+          <div className="rounded-[28px] border border-gray-200 bg-white p-8 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Users className="h-5 w-5" style={{ color: accentColor }} />
+              <h2 className="text-xl font-semibold text-gray-900">Instructores</h2>
+            </div>
+            <div className="mt-6 space-y-4">
+              {instructors.length ? instructors.map((instructor: any) => (
+                <div key={instructor.id} className="rounded-2xl border border-gray-200 p-4">
+                  <p className="font-semibold text-gray-900">{instructor.name}</p>
+                  <p className="mt-1 text-sm text-gray-600">{instructor.bio || 'Instructor activo del club'}</p>
+                </div>
+              )) : <p className="text-sm text-gray-500">Este club todavía no publica instructores activos.</p>}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-gray-200 bg-white p-8 shadow-sm">
+            <div className="flex items-center gap-3">
+              <CalendarDays className="h-5 w-5" style={{ color: accentColor }} />
+              <h2 className="text-xl font-semibold text-gray-900">Canchas</h2>
+            </div>
+            <div className="mt-6 space-y-4">
+              {courts.map((court: any) => (
+                <button
+                  key={court.id}
+                  type="button"
+                  onClick={() => setSelectedCourt(court.id)}
+                  className="w-full rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5"
+                  style={{ borderColor: selectedCourt === court.id ? accentColor : '#E5E7EB', backgroundColor: selectedCourt === court.id ? accentSoft : '#FFFFFF' }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-gray-900">{court.name}</p>
+                      <p className="mt-1 text-sm text-gray-600">{court.description || 'Cancha activa para reservas del club'}</p>
+                    </div>
+                    <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: accentSoft, color: accentColor }}>
+                      {court.surfaceType}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div id="booking" className="rounded-[28px] border border-gray-200 bg-white p-8 shadow-sm">
+          <h2 className="text-xl font-semibold text-gray-900">Reserva online</h2>
+          <p className="mt-2 text-sm text-gray-500">Selecciona una cancha y fecha para ver disponibilidad.</p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_180px]">
+            <select className="input-field" value={selectedCourt} onChange={e => setSelectedCourt(e.target.value)}>
+              <option value="">Selecciona una cancha</option>
+              {courts.map((court: any) => <option key={court.id} value={court.id}>{court.name}</option>)}
+            </select>
+            <input className="input-field" type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {!selectedCourt ? (
+              <p className="text-sm text-gray-500">Elige una cancha para cargar horarios.</p>
+            ) : availability.isLoading ? (
+              <p className="text-sm text-gray-500">Cargando horarios...</p>
+            ) : availability.data?.length ? (
+              availability.data.map((slot: any) => (
+                <div key={slot.startTime} className="flex flex-col gap-3 rounded-2xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {new Date(slot.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                      {' - '}
+                      {new Date(slot.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">{slot.available ? 'Disponible' : 'No disponible'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!slot.available || reserve.isPending}
+                    onClick={() => reserve.mutate(slot)}
+                    className="rounded-full px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ backgroundColor: slot.available ? accentColor : '#E5E7EB', color: slot.available ? accentText : '#6B7280' }}
+                  >
+                    {slot.available ? 'Reservar' : 'Ocupado'}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No hay horarios disponibles para esa fecha.</p>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

@@ -197,7 +197,7 @@ export default function SettingsPage() {
   const [profileForm, setProfileForm] = useState({
     description: '', address: '', city: '', region: '',
     phone: '', whatsapp: '', email: '', instagram: '',
-    website: '', rules: '', cancellationPolicy: '',
+    website: '', rules: '', cancellationPolicy: '', accentColor: '',
   });
 
   const [hours, setHours] = useState(
@@ -220,6 +220,7 @@ export default function SettingsPage() {
         website: club.profile.website ?? '',
         rules: club.profile.rules ?? '',
         cancellationPolicy: club.profile.cancellationPolicy ?? '',
+        accentColor: club.profile.accentColor ?? '',
       });
     }
     if (club?.openingHours?.length > 0) {
@@ -239,7 +240,7 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['club', selectedClub?.id] });
       toast.success('Perfil actualizado');
     },
-    onError: () => toast.error('Error al actualizar perfil'),
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Error al actualizar perfil'),
   });
 
   const updateHoursMutation = useMutation({
@@ -332,7 +333,7 @@ export default function SettingsPage() {
           </div>
           <button
             className="btn-primary mt-6"
-            onClick={() => updateProfileMutation.mutate(profileForm)}
+            onClick={() => updateProfileMutation.mutate({ ...profileForm, accentColor: profileForm.accentColor || null })}
             disabled={updateProfileMutation.isPending}
           >
             {updateProfileMutation.isPending ? 'Guardando...' : 'Guardar cambios'}

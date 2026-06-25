@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Calendar, BookOpen, Users, CreditCard,
   Trophy, BarChart3, Settings, Building2, MapPin, UserCheck,
-  Award, FileText, LogOut, ChevronRight,
+  Award, FileText, Bell, LogOut, ChevronRight,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useClubStore } from '@/stores/club.store';
@@ -23,6 +23,7 @@ const navItems = [
   { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
   { href: '/dashboard/rankings', label: 'Ranking', icon: BarChart3 },
   { href: '/dashboard/reports', label: 'Reportes', icon: FileText },
+  { href: '/dashboard/announcements', label: 'Anuncios', icon: Bell },
   { href: '/dashboard/settings', label: 'Club & Config', icon: Settings },
 ];
 

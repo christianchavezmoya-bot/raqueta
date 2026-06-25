@@ -12,6 +12,7 @@ import { EmailService } from '../common/email/email.service';
 import { CreateClubDto, UpdateClubProfileDto, RegisterClubDto } from './dto/create-club.dto';
 import { ActingUser, assertClubScope } from '../common/utils/club-scope';
 import { Role } from '@prisma/client';
+import { normalizeAccentColor, resolveAccentColor } from './club-accent';
 
 const TRIAL_DAYS = 14;
 
@@ -35,7 +36,7 @@ export class ClubsService {
       }),
       this.prisma.club.count({ where: { status: { in: ['ACTIVE', 'TRIAL'] } } }),
     ]);
-    return { data: clubs, total, page, limit };
+    return { data: clubs.map(club => this.withResolvedAccent(club)), total, page, limit };
   }
 
   async findOne(id: string) {
@@ -51,7 +52,7 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return { ...club, trialStatus: this.computeTrialStatus(club) };
+    return { ...this.withResolvedAccent(club), trialStatus: this.computeTrialStatus(club) };
   }
 
   async findBySlug(slug: string) {
@@ -66,7 +67,7 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return { ...club, trialStatus: this.computeTrialStatus(club) };
+    return { ...this.withResolvedAccent(club), trialStatus: this.computeTrialStatus(club) };
   }
 
   async create(dto: CreateClubDto, ownerUserId: string) {
@@ -180,10 +181,16 @@ export class ClubsService {
   async updateProfile(clubId: string, dto: UpdateClubProfileDto, actor: ActingUser) {
     await this.ensureExists(clubId);
     await assertClubScope(actor, clubId, this.prisma);
+    const data = {
+      ...dto,
+      ...(Object.prototype.hasOwnProperty.call(dto, 'accentColor')
+        ? { accentColor: normalizeAccentColor(dto.accentColor) }
+        : {}),
+    };
     return this.prisma.clubProfile.upsert({
       where: { clubId },
-      update: dto,
-      create: { clubId, ...dto },
+      update: data,
+      create: { clubId, ...data },
     });
   }
 
@@ -299,6 +306,17 @@ export class ClubsService {
     const club = await this.prisma.club.findUnique({ where: { id } });
     if (!club) throw new NotFoundException('Club not found');
     return club;
+  }
+
+  private withResolvedAccent<T extends { profile?: Record<string, any> | null }>(club: T): T {
+    if (!club.profile) return club;
+    return {
+      ...club,
+      profile: {
+        ...club.profile,
+        resolvedAccentColor: resolveAccentColor(club.profile.accentColor),
+      },
+    };
   }
 
   private slugify(text: string): string {

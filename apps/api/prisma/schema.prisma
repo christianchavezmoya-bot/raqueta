@@ -208,6 +208,7 @@ model User {
   wonMatches              Match[]                  @relation("WonMatches")
   rankings                Ranking[]
   enteredClubMatchResults ClubMatchResult[]
+  sentClubAnnouncements   ClubAnnouncement[]       @relation("ClubAnnouncementSender")
 
   @@map("users")
 }
@@ -317,6 +318,7 @@ model Club {
   clubRankingRules   ClubRankingRule[]
   clubRankingEntries ClubRankingEntry[]
   clubMatchResults   ClubMatchResult[]
+  announcements      ClubAnnouncement[]
 
   @@map("clubs")
 }
@@ -340,6 +342,7 @@ model ClubProfile {
   website            String?
   rules              String?
   cancellationPolicy String?  @map("cancellation_policy")
+  accentColor        String?  @map("accent_color")
   paymentMethods     String[] @map("payment_methods")
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -742,17 +745,35 @@ model ClubMatchResult {
 }
 
 model Notification {
-  id        String           @id @default(uuid())
-  userId    String           @map("user_id")
-  title     String
-  message   String
-  type      NotificationType @default(GENERAL)
-  readAt    DateTime?        @map("read_at")
-  createdAt DateTime         @default(now()) @map("created_at")
+  id             String           @id @default(uuid())
+  userId         String           @map("user_id")
+  announcementId String?          @map("announcement_id")
+  title          String
+  message        String
+  type           NotificationType @default(GENERAL)
+  readAt         DateTime?        @map("read_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcement ClubAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
 
   @@map("notifications")
+}
+
+model ClubAnnouncement {
+  id           String         @id @default(uuid())
+  clubId       String         @map("club_id")
+  sentByUserId String         @map("sent_by_user_id")
+  title        String
+  body         String
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  club          Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  sentByUser    User           @relation("ClubAnnouncementSender", fields: [sentByUserId], references: [id], onDelete: Restrict)
+  notifications Notification[]
+
+  @@index([clubId, createdAt])
+  @@map("club_announcements")
 }
 
 // ─── AUDIT LOGS ──────────────────────────────────────────────────────────────

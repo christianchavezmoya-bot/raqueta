@@ -112,6 +112,11 @@ export class UpdateClubProfileDto {
   @IsString()
   cancellationPolicy?: string;
 
+  @ApiPropertyOptional({ example: '#1F3D2B', nullable: true })
+  @IsOptional()
+  @IsString()
+  accentColor?: string | null;
+
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   paymentMethods?: string[];

@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import { useAuthStore } from '../../src/stores/auth.store';
+import { getContrastText, resolveClubAccent, withAlpha } from '../../src/lib/club-accent';
 
 const COURT_SURFACE_LABELS: Record<string, string> = {
   CLAY: 'Polvo de ladrillo',
@@ -37,6 +38,11 @@ export default function ClubDetailScreen() {
     },
     enabled: !!id,
   });
+
+  const accentColor = resolveClubAccent(club?.profile?.resolvedAccentColor ?? club?.profile?.accentColor);
+  const accentText = getContrastText(accentColor);
+  const accentSoft = withAlpha(accentColor, '18');
+  const accentBorder = withAlpha(accentColor, '44');
 
   const { data: courts } = useQuery({
     queryKey: ['courts-mobile', id],
@@ -102,7 +108,7 @@ export default function ClubDetailScreen() {
   if (clubLoading) {
     return (
       <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator color="#16a34a" size="large" />
+        <ActivityIndicator color={accentColor} size="large" />
       </View>
     );
   }
@@ -122,12 +128,12 @@ export default function ClubDetailScreen() {
   return (
     <View style={s.container}>
       {/* Hero header */}
-      <View style={s.hero}>
+      <View style={[s.hero, { backgroundColor: accentColor }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.heroBack}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <View style={s.heroIcon}>
-          <Ionicons name="business" size={32} color="#16a34a" />
+        <View style={[s.heroIcon, { borderColor: accentBorder }]}>
+          <Ionicons name="business" size={32} color={accentColor} />
         </View>
         <Text style={s.heroName}>{club.name}</Text>
         {club.profile?.city && (
@@ -143,10 +149,10 @@ export default function ClubDetailScreen() {
         {(['info', 'courts', 'availability'] as const).map(tab => (
           <TouchableOpacity
             key={tab}
-            style={[s.tab, activeTab === tab && s.tabActive]}
+            style={[s.tab, activeTab === tab && s.tabActive, activeTab === tab && { borderBottomColor: accentColor }]}
             onPress={() => setActiveTab(tab)}
           >
-            <Text style={[s.tabText, activeTab === tab && s.tabTextActive]}>
+            <Text style={[s.tabText, activeTab === tab && s.tabTextActive, activeTab === tab && { color: accentColor }]}>
               {tab === 'info' ? 'Info' : tab === 'courts' ? 'Canchas' : 'Reservar'}
             </Text>
           </TouchableOpacity>
@@ -224,13 +230,13 @@ export default function ClubDetailScreen() {
               courts.map((court: any) => (
                 <TouchableOpacity
                   key={court.id}
-                  style={[s.courtCard, selectedCourt === court.id && s.courtCardSelected]}
+                  style={[s.courtCard, selectedCourt === court.id && s.courtCardSelected, selectedCourt === court.id && { borderColor: accentColor }]}
                   onPress={() => { setSelectedCourt(court.id); setActiveTab('availability'); }}
                   activeOpacity={0.8}
                 >
                   <View style={s.courtHeader}>
-                    <View style={s.courtIconWrap}>
-                      <Ionicons name="tennisball" size={20} color="#16a34a" />
+                    <View style={[s.courtIconWrap, { backgroundColor: accentSoft }]}>
+                      <Ionicons name="tennisball" size={20} color={accentColor} />
                     </View>
                     <View style={s.courtInfo}>
                       <Text style={s.courtName}>{court.name}</Text>
@@ -240,8 +246,8 @@ export default function ClubDetailScreen() {
                       </Text>
                     </View>
                     {court.status === 'ACTIVE' ? (
-                      <View style={s.courtBadge}>
-                        <Text style={s.courtBadgeText}>Disponible</Text>
+                      <View style={[s.courtBadge, { backgroundColor: accentSoft }]}>
+                        <Text style={[s.courtBadgeText, { color: accentColor }]}>Disponible</Text>
                       </View>
                     ) : (
                       <View style={[s.courtBadge, { backgroundColor: '#fef2f2' }]}>
@@ -256,7 +262,7 @@ export default function ClubDetailScreen() {
                       </Text>
                     )}
                     {court.memberPricePerHour && (
-                      <Text style={s.priceMember}>
+                      <Text style={[s.priceMember, { color: accentColor }]}>
                         Socio: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(court.memberPricePerHour)}/hr
                       </Text>
                     )}
@@ -280,7 +286,7 @@ export default function ClubDetailScreen() {
                     {courts.map((c: any) => (
                       <TouchableOpacity
                         key={c.id}
-                        style={[s.courtChip, selectedCourt === c.id && s.courtChipActive]}
+                        style={[s.courtChip, selectedCourt === c.id && s.courtChipActive, selectedCourt === c.id && { backgroundColor: accentColor, borderColor: accentColor }]}
                         onPress={() => setSelectedCourt(c.id)}
                       >
                         <Text style={[s.courtChipText, selectedCourt === c.id && s.courtChipTextActive]}>
@@ -304,7 +310,7 @@ export default function ClubDetailScreen() {
                     return (
                       <TouchableOpacity
                         key={dayStr}
-                        style={[s.dateChip, isSelected && s.dateChipActive]}
+                        style={[s.dateChip, isSelected && s.dateChipActive, isSelected && { backgroundColor: accentColor, borderColor: accentColor }]}
                         onPress={() => setSelectedDate(dayStr)}
                       >
                         <Text style={[s.dateChipDay, isSelected && s.dateChipTextActive]}>
@@ -326,7 +332,7 @@ export default function ClubDetailScreen() {
                 <Text style={s.emptyText}>Selecciona una cancha</Text>
               </View>
             ) : !availability ? (
-              <ActivityIndicator color="#16a34a" style={{ marginTop: 32 }} />
+              <ActivityIndicator color={accentColor} style={{ marginTop: 32 }} />
             ) : (
               <View style={s.slots}>
                 <Text style={s.slotsTitle}>
@@ -355,8 +361,8 @@ export default function ClubDetailScreen() {
                           {startHour} – {endHour}
                         </Text>
                         {slot.available ? (
-                          <View style={s.slotBadgeAvail}>
-                            <Text style={s.slotBadgeAvailText}>Disponible</Text>
+                          <View style={[s.slotBadgeAvail, { backgroundColor: accentSoft }]}>
+                            <Text style={[s.slotBadgeAvailText, { color: accentColor }]}>Disponible</Text>
                           </View>
                         ) : (
                           <View style={s.slotBadgeOcc}>
@@ -388,7 +394,7 @@ const s = StyleSheet.create({
     borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center',
   },
   heroIcon: {
-    width: 64, height: 64, borderRadius: 20, backgroundColor: '#fff',
+    width: 64, height: 64, borderRadius: 20, backgroundColor: '#fff', borderWidth: 2,
     justifyContent: 'center', alignItems: 'center', marginBottom: 12,
   },
   heroName: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center' },

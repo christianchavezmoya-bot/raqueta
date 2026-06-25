@@ -125,3 +125,25 @@ export function useMembershipPlans(clubId?: string) {
     enabled: !!clubId,
   });
 }
+
+export function usePublicClubBySlug(slug?: string) {
+  return useQuery({
+    queryKey: ['club-public', slug],
+    queryFn: async () => {
+      const { data } = await api.get(`/clubs/slug/${slug}`);
+      return data;
+    },
+    enabled: !!slug,
+  });
+}
+
+export function useClubAnnouncements(clubId?: string) {
+  return useQuery({
+    queryKey: ['club-announcements', clubId],
+    queryFn: async () => {
+      const { data } = await api.get(`/clubs/${clubId}/announcements`);
+      return data;
+    },
+    enabled: !!clubId,
+  });
+}

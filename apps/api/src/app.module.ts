@@ -23,6 +23,7 @@ import { ReportsModule } from './reports/reports.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { MatchLogModule } from './match-log/match-log.module';
 import { ClubRankingsModule } from './club-rankings/club-rankings.module';
+import { ClubAnnouncementsModule } from './club-announcements/club-announcements.module';
 
 @Module({
   providers: [
@@ -50,6 +51,7 @@ import { ClubRankingsModule } from './club-rankings/club-rankings.module';
     RankingsModule,
     CalendarModule,
     NotificationsModule,
+    ClubAnnouncementsModule,
     ReportsModule,
     InvitationsModule,
     MatchLogModule,

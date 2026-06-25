@@ -33,9 +33,15 @@ export class NotificationsService {
     return { message: 'Push token registered' };
   }
 
-  async send(userId: string, title: string, message: string, type: NotificationType = 'GENERAL') {
+  async send(
+    userId: string,
+    title: string,
+    message: string,
+    type: NotificationType = 'GENERAL',
+    options?: { announcementId?: string },
+  ) {
     const notification = await this.prisma.notification.create({
-      data: { userId, title, message, type },
+      data: { userId, title, message, type, announcementId: options?.announcementId },
     });
 
     // Fire-and-forget Expo push if user has a token
@@ -46,9 +52,21 @@ export class NotificationsService {
     return notification;
   }
 
-  async sendBulk(userIds: string[], title: string, message: string, type: NotificationType = 'GENERAL') {
+  async sendBulk(
+    userIds: string[],
+    title: string,
+    message: string,
+    type: NotificationType = 'GENERAL',
+    options?: { announcementId?: string },
+  ) {
     const notifications = await this.prisma.notification.createMany({
-      data: userIds.map(userId => ({ userId, title, message, type })),
+      data: userIds.map(userId => ({
+        userId,
+        title,
+        message,
+        type,
+        announcementId: options?.announcementId,
+      })),
     });
 
     // Fire-and-forget push for all users with tokens
