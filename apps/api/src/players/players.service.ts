@@ -309,7 +309,22 @@ export class PlayersService {
   async findById(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { playerProfile: { include: { stats: true, homeClub: { include: { profile: true } } } } },
+      include: {
+        playerProfile: {
+          include: {
+            stats: true,
+            homeClub: { include: { profile: true } },
+            rosterLinks: {
+              select: {
+                id: true,
+                clubId: true,
+                division: true,
+                club: { select: { id: true, name: true, slug: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!user) throw new NotFoundException('Player not found');
     const { passwordHash, ...safe } = user;

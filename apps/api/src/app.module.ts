@@ -24,6 +24,7 @@ import { InvitationsModule } from './invitations/invitations.module';
 import { MatchLogModule } from './match-log/match-log.module';
 import { ClubRankingsModule } from './club-rankings/club-rankings.module';
 import { ClubAnnouncementsModule } from './club-announcements/club-announcements.module';
+import { HistoryModule } from './history/history.module';
 
 @Module({
   providers: [
@@ -56,6 +57,7 @@ import { ClubAnnouncementsModule } from './club-announcements/club-announcements
     InvitationsModule,
     MatchLogModule,
     ClubRankingsModule,
+    HistoryModule,
   ],
 })
 export class AppModule {}

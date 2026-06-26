@@ -11,8 +11,8 @@ import api from '@/lib/api';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   DRAFT: { label: 'Borrador', color: 'badge-gray' },
-  REGISTRATION_OPEN: { label: 'Inscripción abierta', color: 'badge-green' },
-  REGISTRATION_CLOSED: { label: 'Inscripción cerrada', color: 'badge-yellow' },
+  REGISTRATION_OPEN: { label: 'Inscripcin abierta', color: 'badge-green' },
+  REGISTRATION_CLOSED: { label: 'Inscripcin cerrada', color: 'badge-yellow' },
   IN_PROGRESS: { label: 'En curso', color: 'badge-yellow' },
   COMPLETED: { label: 'Finalizado', color: 'badge-gray' },
   CANCELLED: { label: 'Cancelado', color: 'badge-red' },
@@ -114,7 +114,7 @@ export default function TournamentDetailPage() {
             <span className={statusCfg.color}>{statusCfg.label}</span>
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
-            {format(new Date(tournament.startDate), 'd MMM', { locale: es })} –{' '}
+            {format(new Date(tournament.startDate), 'd MMM', { locale: es })} {' '}
             {format(new Date(tournament.endDate), 'd MMM yyyy', { locale: es })}
           </p>
         </div>
@@ -153,9 +153,9 @@ export default function TournamentDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Inscriptos', value: totalRegistrations, icon: Users },
-          { label: 'Categorías', value: tournament.categories?.length ?? 0, icon: Trophy },
+          { label: 'Categoras', value: tournament.categories?.length ?? 0, icon: Trophy },
           { label: 'Precio', value: tournament.price > 0 ? formatCLP(tournament.price) : 'Gratis', icon: Calendar },
-          { label: 'Máx. jugadores', value: tournament.maxPlayers ?? '8', icon: Users },
+          { label: 'Mx. jugadores', value: tournament.maxPlayers ?? '8', icon: Users },
         ].map(({ label, value, icon: Icon }) => (
           <div key={label} className="card text-center py-5">
             <Icon className="w-5 h-5 text-brand-600 mx-auto mb-1.5" />
@@ -188,21 +188,21 @@ export default function TournamentDetailPage() {
       {activeTab === 'overview' && (
         <div className="grid md:grid-cols-2 gap-6">
           <div className="card">
-            <h3 className="font-semibold text-gray-900 mb-3">Información general</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Informacin general</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-gray-500">Formato</dt><dd className="font-medium">{tournament.format}</dd></div>
               {tournament.description && (
-                <div><dt className="text-gray-500 mb-1">Descripción</dt><dd className="text-gray-700">{tournament.description}</dd></div>
+                <div><dt className="text-gray-500 mb-1">Descripcin</dt><dd className="text-gray-700">{tournament.description}</dd></div>
               )}
               {tournament.registrationOpenDate && (
                 <div className="flex justify-between">
-                  <dt className="text-gray-500">Apertura inscripción</dt>
+                  <dt className="text-gray-500">Apertura inscripcin</dt>
                   <dd className="font-medium">{format(new Date(tournament.registrationOpenDate), 'd MMM yyyy', { locale: es })}</dd>
                 </div>
               )}
               {tournament.registrationCloseDate && (
                 <div className="flex justify-between">
-                  <dt className="text-gray-500">Cierre inscripción</dt>
+                  <dt className="text-gray-500">Cierre inscripcin</dt>
                   <dd className="font-medium">{format(new Date(tournament.registrationCloseDate), 'd MMM yyyy', { locale: es })}</dd>
                 </div>
               )}
@@ -210,7 +210,7 @@ export default function TournamentDetailPage() {
           </div>
 
           <div className="card">
-            <h3 className="font-semibold text-gray-900 mb-3">Categorías</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Categoras</h3>
             <div className="space-y-2">
               {tournament.categories?.map((cat: any) => (
                 <div key={cat.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
@@ -218,7 +218,7 @@ export default function TournamentDetailPage() {
                     <p className="font-medium text-sm text-gray-900">{cat.name}</p>
                     <p className="text-xs text-gray-500">
                       {cat.gender === 'MALE' ? 'Masculino' : cat.gender === 'FEMALE' ? 'Femenino' : 'Mixto'}
-                      {cat.ageMin || cat.ageMax ? ` · ${cat.ageMin ?? ''}–${cat.ageMax ?? ''}` : ''}
+                      {cat.ageMin || cat.ageMax ? `  ${cat.ageMin ?? ''}${cat.ageMax ?? ''}` : ''}
                     </p>
                   </div>
                   <span className="badge-gray text-xs">{cat.registrations?.length ?? 0} inscriptos</span>
@@ -252,7 +252,7 @@ export default function TournamentDetailPage() {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Jugador</th>
-                        <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Fecha inscripción</th>
+                        <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Fecha inscripcin</th>
                         <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Estado</th>
                       </tr>
                     </thead>
@@ -278,7 +278,7 @@ export default function TournamentDetailPage() {
                       {(!cat.registrations || cat.registrations.length === 0) && (
                         <tr>
                           <td colSpan={3} className="px-5 py-6 text-center text-gray-400 text-sm">
-                            Sin inscripciones aún
+                            Sin inscripciones an
                           </td>
                         </tr>
                       )}

@@ -48,6 +48,7 @@ coverage/
 # Local file storage (uploaded media)
 apps/api/storage/
 storage/
+backups/
 
 # Expo generated native projects (run `expo prebuild` to regenerate)
 apps/mobile/ios/

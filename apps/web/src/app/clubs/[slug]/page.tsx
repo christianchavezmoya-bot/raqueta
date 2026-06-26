@@ -1,5 +1,6 @@
 import ClubPublicPageClient from './ClubPublicPageClient';
 
-export default function ClubPublicPage({ params }: { params: { slug: string } }) {
-  return <ClubPublicPageClient slug={params.slug} />;
+export default async function ClubPublicPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return <ClubPublicPageClient slug={slug} />;
 }
