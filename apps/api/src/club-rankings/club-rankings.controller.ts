@@ -53,9 +53,9 @@ export class ClubRankingsController {
   @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
   @Get('clubs/:clubId/ranking-players')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List players affiliated with the club for internal ranking entry' })
-  getClubPlayers(@Param('clubId') clubId: string, @CurrentUser() actor: ActingUser) {
-    return this.clubRankingsService.getClubPlayers(clubId, actor);
+  @ApiOperation({ summary: 'List roster entries for match-result entry' })
+  getClubRosterForEntry(@Param('clubId') clubId: string, @CurrentUser() actor: ActingUser) {
+    return this.clubRankingsService.getClubRosterForEntry(clubId, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,6 +84,21 @@ export class ClubRankingsController {
     @CurrentUser() actor: ActingUser,
   ) {
     return this.clubRankingsService.importMatchResults(clubId, file, actor);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post('clubs/:clubId/match-results/import-grid')
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'Import historical match grid (matrix CSV) into match results' })
+  importMatchGrid(
+    @Param('clubId') clubId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.importMatchGrid(clubId, file, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

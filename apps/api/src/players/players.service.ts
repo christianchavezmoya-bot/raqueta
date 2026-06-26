@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
 import { TenisChileService } from '../common/integrations/tenischile/tenischile.service';
+import { RosterService } from '../clubs/roster/roster.service';
+import { validateAndNormalizeRut } from '../common/utils/rut';
 
 const RUN_REFRESH_HOURS = 24;
 
@@ -20,6 +22,7 @@ export class PlayersService {
     private prisma: PrismaService,
     private media: MediaService,
     private tenisChile: TenisChileService,
+    private rosterService: RosterService,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
@@ -231,26 +234,34 @@ export class PlayersService {
   async getMyClubRanking(userId: string) {
     const profile = await this.prisma.playerProfile.findUnique({
       where: { userId },
-      include: {
-        homeClub: { select: { id: true, name: true } },
-        clubRankingEntries: {
-          include: {
-            club: { select: { id: true, name: true } },
-          },
-          orderBy: { rank: 'asc' },
-          take: 1,
-        },
-      },
+      include: { homeClub: { select: { id: true, name: true } } },
+    });
+    if (!profile) throw new NotFoundException('Profile not found');
+
+    if (!profile.homeClubId) return { club: null, entry: null };
+
+    // Find this player's roster entry at their home club
+    const rosterEntry = await this.prisma.clubPlayerRoster.findFirst({
+      where: { clubId: profile.homeClubId, linkedPlayerProfileId: profile.id },
+    });
+    if (!rosterEntry) return { club: profile.homeClub, entry: null };
+
+    // Active season for the home club
+    const activeSeason = await this.prisma.rankingSeason.findFirst({
+      where: { clubId: profile.homeClubId, status: 'ACTIVE' },
+      select: { id: true },
     });
 
-    if (!profile) throw new NotFoundException('Profile not found');
-    const entry = profile.clubRankingEntries.find(item => item.clubId === profile.homeClubId) ?? profile.clubRankingEntries[0] ?? null;
+    const entry = await this.prisma.clubRankingEntry.findFirst({
+      where: {
+        clubId:   profile.homeClubId,
+        rosterId: rosterEntry.id,
+        seasonId: activeSeason?.id ?? null,
+      },
+      include: { club: { select: { id: true, name: true } } },
+    });
 
-    return {
-      club: profile.homeClub,
-      entry,
-      linkedPlayerProfileId: profile.id,
-    };
+    return { club: profile.homeClub, entry };
   }
 
   async findPublicProfile(userId: string) {
@@ -279,7 +290,20 @@ export class PlayersService {
   async updateMyProfile(userId: string, data: any) {
     const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundException('Profile not found');
-    return this.prisma.playerProfile.update({ where: { userId }, data });
+
+    const updateData = { ...data };
+    if (updateData.rut !== undefined && updateData.rut !== null) {
+      updateData.rut = validateAndNormalizeRut(String(updateData.rut));
+    }
+
+    const updated = await this.prisma.playerProfile.update({ where: { userId }, data: updateData });
+
+    // Attempt roster auto-link if RUT was updated
+    if (updateData.rut) {
+      await this.rosterService.attemptRosterLink(profile.id).catch(() => {/* best-effort */});
+    }
+
+    return updated;
   }
 
   async findById(userId: string) {

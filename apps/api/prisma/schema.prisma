@@ -165,6 +165,11 @@ enum ClubMatchResultSource {
   MANUAL
 }
 
+enum RankingSeasonStatus {
+  ACTIVE
+  CLOSED
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -209,6 +214,7 @@ model User {
   rankings                Ranking[]
   enteredClubMatchResults ClubMatchResult[]
   sentClubAnnouncements   ClubAnnouncement[]       @relation("ClubAnnouncementSender")
+  givenBonusAwards        ClubBonusPointAward[]
 
   @@map("users")
 }
@@ -254,6 +260,9 @@ model PlayerProfile {
   runAtpPointsCached Int?      @map("run_atp_points_cached")
   runLastSyncedAt    DateTime? @map("run_last_synced_at")
 
+  // Stage 6 — RUT for roster linking
+  rut String? @unique
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -261,13 +270,11 @@ model PlayerProfile {
   homeClub Club?        @relation(fields: [homeClubId], references: [id])
   stats    PlayerStats?
 
-  sentInvitations      MatchInvitation[]  @relation("SentInvitations")
-  receivedInvitations  MatchInvitation[]  @relation("ReceivedInvitations")
-  ownedMatchLogs       MatchLogEntry[]    @relation("OwnedMatchLogs")
-  opponentMatchLogs    MatchLogEntry[]    @relation("OpponentMatchLogs")
-  clubRankingEntries   ClubRankingEntry[]
-  wonClubMatchResults  ClubMatchResult[]  @relation("ClubMatchWinner")
-  lostClubMatchResults ClubMatchResult[]  @relation("ClubMatchLoser")
+  sentInvitations     MatchInvitation[]  @relation("SentInvitations")
+  receivedInvitations MatchInvitation[]  @relation("ReceivedInvitations")
+  ownedMatchLogs      MatchLogEntry[]    @relation("OwnedMatchLogs")
+  opponentMatchLogs   MatchLogEntry[]    @relation("OpponentMatchLogs")
+  rosterLinks         ClubPlayerRoster[] @relation("RosterLink")
 
   @@map("player_profiles")
 }
@@ -319,6 +326,11 @@ model Club {
   clubRankingEntries ClubRankingEntry[]
   clubMatchResults   ClubMatchResult[]
   announcements      ClubAnnouncement[]
+  rosterEntries      ClubPlayerRoster[]
+  rankingSeasons     RankingSeason[]
+  divisionConfigs    ClubDivisionConfig[]
+  bonusPointTypes    ClubBonusPointType[]
+  bonusPointAwards   ClubBonusPointAward[]
 
   @@map("clubs")
 }
@@ -683,7 +695,7 @@ model Ranking {
   @@map("rankings")
 }
 
-// ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
+// ─── CLUB RANKING SYSTEM (Stage 5 → Stage 6) ─────────────────────────────────
 
 model ClubRankingRule {
   id           String   @id @default(uuid())
@@ -702,29 +714,99 @@ model ClubRankingRule {
   @@map("club_ranking_rules")
 }
 
+// Stage 6 — durable per-club member record; canonical identity for all ranking operations
+model ClubPlayerRoster {
+  id                    String    @id @default(uuid())
+  clubId                String    @map("club_id")
+  firstName             String    @map("first_name")
+  lastName              String    @map("last_name")
+  dateOfBirth           DateTime? @map("date_of_birth")
+  rut                   String?
+  phone                 String?
+  address               String?
+  suburb                String?
+  postcode              String?
+  city                  String?
+  division              String?
+  linkedPlayerProfileId String?   @map("linked_player_profile_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  club                Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  linkedPlayerProfile PlayerProfile?    @relation("RosterLink", fields: [linkedPlayerProfileId], references: [id], onDelete: SetNull)
+  wonMatches          ClubMatchResult[] @relation("ClubMatchWinnerRoster")
+  lostMatches         ClubMatchResult[] @relation("ClubMatchLoserRoster")
+  rankingEntries      ClubRankingEntry[]
+  bonusAwards         ClubBonusPointAward[]
+
+  @@unique([clubId, rut])
+  @@index([clubId])
+  @@map("club_player_roster")
+}
+
+model RankingSeason {
+  id                       String              @id @default(uuid())
+  clubId                   String              @map("club_id")
+  label                    String
+  startedAt                DateTime            @map("started_at")
+  closedAt                 DateTime?           @map("closed_at")
+  status                   RankingSeasonStatus @default(ACTIVE)
+  carryForwardDecayPercent Int                 @default(50) @map("carry_forward_decay_percent")
+  createdAt                DateTime            @default(now()) @map("created_at")
+  updatedAt                DateTime            @updatedAt @map("updated_at")
+
+  club           Club                  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  rankingEntries ClubRankingEntry[]
+  matchResults   ClubMatchResult[]
+  bonusAwards    ClubBonusPointAward[]
+
+  @@index([clubId, status])
+  @@map("ranking_seasons")
+}
+
+// Per-division tier base points and promotion/relegation ordering
+model ClubDivisionConfig {
+  id             String @id @default(uuid())
+  clubId         String @map("club_id")
+  divisionKey    String @map("division_key")
+  label          String
+  tierBasePoints Int    @default(0) @map("tier_base_points")
+  displayOrder   Int    @default(0) @map("display_order")
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, divisionKey])
+  @@map("club_division_configs")
+}
+
 model ClubRankingEntry {
   id          String   @id @default(uuid())
   clubId      String   @map("club_id")
-  playerId    String   @map("player_id")
+  seasonId    String?  @map("season_id")
+  rosterId    String   @map("roster_id")
   rank        Int
   totalPoints Int      @default(0) @map("total_points")
   gamesPlayed Int      @default(0) @map("games_played")
+  withdrawn   Boolean  @default(false)
+  division    String?
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  club   Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  player PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  club        Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  season      RankingSeason?   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  rosterEntry ClubPlayerRoster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
 
-  @@unique([clubId, playerId])
-  @@index([clubId, rank])
+  @@unique([clubId, seasonId, rosterId])
+  @@index([clubId, seasonId, rank])
   @@map("club_ranking_entries")
 }
 
 model ClubMatchResult {
   id              String                @id @default(uuid())
   clubId          String                @map("club_id")
-  winnerPlayerId  String?               @map("winner_player_id")
+  seasonId        String?               @map("season_id")
+  winnerRosterId  String?               @map("winner_roster_id")
   winnerNameRaw   String                @map("winner_name_raw")
-  loserPlayerId   String?               @map("loser_player_id")
+  loserRosterId   String?               @map("loser_roster_id")
   loserNameRaw    String                @map("loser_name_raw")
   categoryKey     String                @map("category_key")
   setScores       Json?                 @map("set_scores")
@@ -734,15 +816,54 @@ model ClubMatchResult {
   createdAt       DateTime              @default(now()) @map("created_at")
   updatedAt       DateTime              @updatedAt @map("updated_at")
 
-  club          Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  winnerPlayer  PlayerProfile? @relation("ClubMatchWinner", fields: [winnerPlayerId], references: [id], onDelete: SetNull)
-  loserPlayer   PlayerProfile? @relation("ClubMatchLoser", fields: [loserPlayerId], references: [id], onDelete: SetNull)
-  enteredByUser User           @relation(fields: [enteredByUserId], references: [id], onDelete: Restrict)
+  club          Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  season        RankingSeason?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  winnerRoster  ClubPlayerRoster? @relation("ClubMatchWinnerRoster", fields: [winnerRosterId], references: [id], onDelete: SetNull)
+  loserRoster   ClubPlayerRoster? @relation("ClubMatchLoserRoster", fields: [loserRosterId], references: [id], onDelete: SetNull)
+  enteredByUser User              @relation(fields: [enteredByUserId], references: [id], onDelete: Restrict)
 
   @@index([clubId, categoryKey])
   @@index([clubId, recordedAt])
+  @@index([clubId, seasonId])
   @@map("club_match_results")
 }
+
+// Stage 6F — configurable bonus point types (auto-seeded per club)
+model ClubBonusPointType {
+  id     String  @id @default(uuid())
+  clubId String  @map("club_id")
+  key    String
+  label  String
+  points Int
+  active Boolean @default(true)
+
+  club   Club                  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  awards ClubBonusPointAward[]
+
+  @@unique([clubId, key])
+  @@map("club_bonus_point_types")
+}
+
+model ClubBonusPointAward {
+  id              String   @id @default(uuid())
+  clubId          String   @map("club_id")
+  seasonId        String   @map("season_id")
+  rosterId        String   @map("roster_id")
+  bonusTypeId     String   @map("bonus_type_id")
+  awardedByUserId String   @map("awarded_by_user_id")
+  awardedAt       DateTime @default(now()) @map("awarded_at")
+  note            String?
+
+  club          Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  season        RankingSeason      @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  rosterEntry   ClubPlayerRoster   @relation(fields: [rosterId], references: [id], onDelete: Restrict)
+  bonusType     ClubBonusPointType @relation(fields: [bonusTypeId], references: [id], onDelete: Restrict)
+  awardedByUser User               @relation(fields: [awardedByUserId], references: [id], onDelete: Restrict)
+
+  @@map("club_bonus_point_awards")
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
 
 model Notification {
   id             String           @id @default(uuid())
