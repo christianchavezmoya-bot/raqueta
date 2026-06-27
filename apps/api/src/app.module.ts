@@ -25,6 +25,7 @@ import { MatchLogModule } from './match-log/match-log.module';
 import { ClubRankingsModule } from './club-rankings/club-rankings.module';
 import { ClubAnnouncementsModule } from './club-announcements/club-announcements.module';
 import { HistoryModule } from './history/history.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   providers: [
@@ -58,6 +59,7 @@ import { HistoryModule } from './history/history.module';
     MatchLogModule,
     ClubRankingsModule,
     HistoryModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

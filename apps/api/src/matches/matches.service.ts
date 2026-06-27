@@ -17,12 +17,12 @@ export class MatchesService {
     const match = await this.prisma.match.findUnique({
       where: { id },
       include: {
-        playerOne: { select: { id: true, email: true, playerProfile: true } },
-        playerTwo: { select: { id: true, email: true, playerProfile: true } },
-        winner: { select: { id: true, email: true, playerProfile: true } },
-        court: true,
+        playerOne: { select: { id: true, playerProfile: { select: { id: true, displayName: true, profilePhotoUrl: true } } } },
+        playerTwo: { select: { id: true, playerProfile: { select: { id: true, displayName: true, profilePhotoUrl: true } } } },
+        winner:    { select: { id: true, playerProfile: { select: { id: true, displayName: true, profilePhotoUrl: true } } } },
+        court:      true,
         tournament: true,
-        category: true,
+        category:   true,
       },
     });
     if (!match) throw new NotFoundException('Match not found');
@@ -57,8 +57,8 @@ export class MatchesService {
     return this.prisma.match.findMany({
       where: { OR: [{ playerOneId: playerId }, { playerTwoId: playerId }] },
       include: {
-        playerOne: { select: { id: true, email: true, playerProfile: true } },
-        playerTwo: { select: { id: true, email: true, playerProfile: true } },
+        playerOne: { select: { id: true, playerProfile: { select: { id: true, displayName: true, profilePhotoUrl: true } } } },
+        playerTwo: { select: { id: true, playerProfile: { select: { id: true, displayName: true, profilePhotoUrl: true } } } },
         tournament: true,
       },
       orderBy: { scheduledTime: 'desc' },

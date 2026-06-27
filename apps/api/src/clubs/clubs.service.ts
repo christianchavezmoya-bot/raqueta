@@ -52,7 +52,10 @@ export class ClubsService {
         photos: { orderBy: { displayOrder: 'asc' } },
         openingHours: { orderBy: { dayOfWeek: 'asc' } },
         courts: { where: { active: true }, include: { pricing: true } },
-        instructors: { where: { active: true } },
+        instructors: {
+          where: { active: true },
+          select: { id: true, name: true, photoUrl: true, bio: true, experienceYears: true, specialties: true, certifications: true },
+        },
         membershipPlans: { where: { active: true } },
       },
     });
@@ -72,7 +75,10 @@ export class ClubsService {
         photos: { orderBy: { displayOrder: 'asc' } },
         openingHours: { orderBy: { dayOfWeek: 'asc' } },
         courts: { where: { active: true }, include: { pricing: true } },
-        instructors: { where: { active: true } },
+        instructors: {
+          where: { active: true },
+          select: { id: true, name: true, photoUrl: true, bio: true, experienceYears: true, specialties: true, certifications: true },
+        },
       },
     });
     if (!club) throw new NotFoundException('Club not found');

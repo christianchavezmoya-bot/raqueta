@@ -25,9 +25,10 @@ export class PlayersController {
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION)
+  @Roles(Role.SUPER_ADMIN)
   @Get()
-  @ApiOperation({ summary: 'List players (admin use)' })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all players — SUPER_ADMIN only' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'search', required: false })

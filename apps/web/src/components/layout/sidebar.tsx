@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Calendar, BookOpen, Users, CreditCard,
   Trophy, BarChart3, Settings, Building2, MapPin, UserCheck,
-  Award, FileText, Bell, LogOut, ChevronRight, History,
+  Award, FileText, Bell, LogOut, ChevronRight, History, ShieldCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useClubStore } from '@/stores/club.store';
@@ -48,11 +48,21 @@ export default function Sidebar() {
       {/* Club selector */}
       {selectedClub && (
         <div className="px-4 py-3 border-b border-gray-700">
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2">
-            <Building2 className="w-4 h-4 text-brand-400 flex-shrink-0" />
-            <span className="text-sm text-gray-200 truncate">{selectedClub.name}</span>
-            <ChevronRight className="w-3 h-3 text-gray-500 ml-auto" />
-          </div>
+          {user?.role === 'SUPER_ADMIN' ? (
+            <Link href="/admin/clubs" title="Switch club via Admin Console">
+              <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 hover:bg-gray-700 transition-colors cursor-pointer">
+                <Building2 className="w-4 h-4 text-brand-400 flex-shrink-0" />
+                <span className="text-sm text-gray-200 truncate">{selectedClub.name}</span>
+                <ChevronRight className="w-3 h-3 text-gray-500 ml-auto" />
+              </div>
+            </Link>
+          ) : (
+            <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2">
+              <Building2 className="w-4 h-4 text-brand-400 flex-shrink-0" />
+              <span className="text-sm text-gray-200 truncate">{selectedClub.name}</span>
+              <ChevronRight className="w-3 h-3 text-gray-500 ml-auto" />
+            </div>
+          )}
         </div>
       )}
 
@@ -77,6 +87,19 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Super Admin link */}
+      {user?.role === 'SUPER_ADMIN' && (
+        <div className="px-3 pb-2 border-t border-gray-700 pt-3">
+          <Link
+            href="/admin"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-amber-400 hover:bg-gray-800 hover:text-amber-300 transition-colors"
+          >
+            <ShieldCheck className="w-5 h-5 flex-shrink-0" />
+            Admin Console
+          </Link>
+        </div>
+      )}
 
       {/* User menu */}
       <div className="border-t border-gray-700 p-4">

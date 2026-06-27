@@ -67,11 +67,21 @@ export class PlayersService {
         skip,
         take: limit,
         where: { ...where, playerProfile: { isNot: null } },
-        include: {
+        select: {
+          id:        true,
+          email:     true,
+          role:      true,
+          status:    true,
+          createdAt: true,
+          updatedAt: true,
           playerProfile: {
-            include: {
-              stats: true,
-              homeClub: { select: { id: true, name: true } },
+            select: {
+              id:             true,
+              displayName:    true,
+              profilePhotoUrl:true,
+              level:          true,
+              category:       true,
+              homeClub:       { select: { id: true, name: true } },
             },
           },
         },
@@ -79,15 +89,7 @@ export class PlayersService {
       }),
       this.prisma.user.count({ where: { ...where, playerProfile: { isNot: null } } }),
     ]);
-    return {
-      data: users.map(user => {
-        const { passwordHash, ...safe } = user;
-        return safe;
-      }),
-      total,
-      page,
-      limit,
-    };
+    return { data: users, total, page, limit };
   }
 
   async searchAvailable(requesterId: string, filters: PlayerSearchFilters) {
