@@ -121,8 +121,9 @@ export class ClubsService {
     }
 
     const hash = await bcrypt.hash(dto.password, 12);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const isDev = this.config.get<string>('NODE_ENV', 'production') === 'development';
+    const verificationToken = isDev ? null : crypto.randomBytes(32).toString('hex');
+    const verificationExpiry = isDev ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
     const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
 
     const result = await this.prisma.$transaction(async tx => {
@@ -132,7 +133,8 @@ export class ClubsService {
           passwordHash: hash,
           phone: dto.phone,
           role: Role.CLUB_ADMIN,
-          status: 'PENDING_VERIFICATION',
+          status: isDev ? 'ACTIVE' : 'PENDING_VERIFICATION',
+          emailVerifiedAt: isDev ? new Date() : null,
           emailVerificationToken: verificationToken,
           emailVerificationExpiry: verificationExpiry,
         },
@@ -164,10 +166,14 @@ export class ClubsService {
       return { user, club };
     });
 
-    await this.email.sendVerificationEmail(result.user.email, verificationToken);
+    if (!isDev) {
+      await this.email.sendVerificationEmail(result.user.email, verificationToken!);
+    }
 
     return {
-      message: 'Club registered! Please verify your email to activate your 14-day free trial.',
+      message: isDev
+        ? 'Club registered! Your 14-day free trial has started — you can log in immediately.'
+        : 'Club registered! Please verify your email to activate your 14-day free trial.',
       clubId: result.club.id,
       trialEndsAt,
     };

@@ -34,8 +34,10 @@ export class AuthService {
     if (existing) throw new ConflictException('Email already registered');
 
     const hash = await bcrypt.hash(dto.password, 12);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const isDev = this.config.get<string>('NODE_ENV', 'production') === 'development';
+
+    const verificationToken = isDev ? null : crypto.randomBytes(32).toString('hex');
+    const verificationExpiry = isDev ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const user = await this.prisma.user.create({
       data: {
@@ -43,7 +45,8 @@ export class AuthService {
         passwordHash: hash,
         phone: dto.phone,
         role: Role.PLAYER,
-        status: 'PENDING_VERIFICATION',
+        status: isDev ? 'ACTIVE' : 'PENDING_VERIFICATION',
+        emailVerifiedAt: isDev ? new Date() : null,
         emailVerificationToken: verificationToken,
         emailVerificationExpiry: verificationExpiry,
       },
@@ -54,9 +57,15 @@ export class AuthService {
     });
     await this.prisma.playerStats.create({ data: { playerId: profile.id } });
 
-    await this.email.sendVerificationEmail(user.email, verificationToken);
+    if (!isDev) {
+      await this.email.sendVerificationEmail(user.email, verificationToken!);
+    }
 
-    return { message: 'Registration successful. Please check your email to verify your account.' };
+    return {
+      message: isDev
+        ? 'Registration successful. You can log in immediately.'
+        : 'Registration successful. Please check your email to verify your account.',
+    };
   }
 
   async verifyEmail(token: string) {

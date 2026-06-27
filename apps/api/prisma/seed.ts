@@ -6,15 +6,35 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
+  // Pre-hash all passwords so update: blocks can self-heal stale rows
+  const [
+    superAdminHash,
+    adminHash,
+    managerHash,
+    receptionHash,
+    instructorHash,
+    playerHash,
+    casualHash,
+  ] = await Promise.all([
+    bcrypt.hash('SuperAdmin123!', 12),
+    bcrypt.hash('Admin123!', 12),
+    bcrypt.hash('Manager123!', 12),
+    bcrypt.hash('Reception123!', 12),
+    bcrypt.hash('Instructor123!', 12),
+    bcrypt.hash('Player123!', 12),
+    bcrypt.hash('Player123!', 12),
+  ]);
+
   // ─── SUPER ADMIN ─────────────────────────────────────────────────────────────
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@raqueta.app' },
-    update: {},
+    update: { passwordHash: superAdminHash, status: 'ACTIVE' },
     create: {
       email: 'superadmin@raqueta.app',
-      passwordHash: await bcrypt.hash('SuperAdmin123!', 12),
+      passwordHash: superAdminHash,
       role: Role.SUPER_ADMIN,
       phone: '+56900000001',
+      status: 'ACTIVE',
     },
   });
   console.log('✅ Super admin created:', superAdmin.email);
@@ -22,12 +42,13 @@ async function main() {
   // ─── CLUB ADMIN ──────────────────────────────────────────────────────────────
   const clubAdmin = await prisma.user.upsert({
     where: { email: 'admin@clubtenislascondes.cl' },
-    update: {},
+    update: { passwordHash: adminHash, status: 'ACTIVE' },
     create: {
       email: 'admin@clubtenislascondes.cl',
-      passwordHash: await bcrypt.hash('Admin123!', 12),
+      passwordHash: adminHash,
       role: Role.CLUB_ADMIN,
       phone: '+56911111111',
+      status: 'ACTIVE',
     },
   });
   console.log('✅ Club admin created:', clubAdmin.email);
@@ -35,81 +56,88 @@ async function main() {
   // ─── MANAGER ─────────────────────────────────────────────────────────────────
   const manager = await prisma.user.upsert({
     where: { email: 'manager@clubtenislascondes.cl' },
-    update: {},
+    update: { passwordHash: managerHash, status: 'ACTIVE' },
     create: {
       email: 'manager@clubtenislascondes.cl',
-      passwordHash: await bcrypt.hash('Manager123!', 12),
+      passwordHash: managerHash,
       role: Role.MANAGER,
       phone: '+56922222222',
+      status: 'ACTIVE',
     },
   });
 
   // ─── RECEPTION ───────────────────────────────────────────────────────────────
   const reception = await prisma.user.upsert({
     where: { email: 'recepcion@clubtenislascondes.cl' },
-    update: {},
+    update: { passwordHash: receptionHash, status: 'ACTIVE' },
     create: {
       email: 'recepcion@clubtenislascondes.cl',
-      passwordHash: await bcrypt.hash('Reception123!', 12),
+      passwordHash: receptionHash,
       role: Role.RECEPTION,
       phone: '+56933333333',
+      status: 'ACTIVE',
     },
   });
 
   // ─── INSTRUCTOR ──────────────────────────────────────────────────────────────
   const instructorUser = await prisma.user.upsert({
     where: { email: 'profe.garcia@clubtenislascondes.cl' },
-    update: {},
+    update: { passwordHash: instructorHash, status: 'ACTIVE' },
     create: {
       email: 'profe.garcia@clubtenislascondes.cl',
-      passwordHash: await bcrypt.hash('Instructor123!', 12),
+      passwordHash: instructorHash,
       role: Role.INSTRUCTOR,
       phone: '+56944444444',
+      status: 'ACTIVE',
     },
   });
 
   // ─── PLAYERS ─────────────────────────────────────────────────────────────────
   const player1 = await prisma.user.upsert({
     where: { email: 'juan.perez@gmail.com' },
-    update: {},
+    update: { passwordHash: playerHash, status: 'ACTIVE' },
     create: {
       email: 'juan.perez@gmail.com',
-      passwordHash: await bcrypt.hash('Player123!', 12),
+      passwordHash: playerHash,
       role: Role.PLAYER,
       phone: '+56955555555',
+      status: 'ACTIVE',
     },
   });
 
   const player2 = await prisma.user.upsert({
     where: { email: 'maria.lopez@gmail.com' },
-    update: {},
+    update: { passwordHash: playerHash, status: 'ACTIVE' },
     create: {
       email: 'maria.lopez@gmail.com',
-      passwordHash: await bcrypt.hash('Player123!', 12),
+      passwordHash: playerHash,
       role: Role.PLAYER,
       phone: '+56966666666',
+      status: 'ACTIVE',
     },
   });
 
   const player3 = await prisma.user.upsert({
     where: { email: 'carlos.silva@gmail.com' },
-    update: {},
+    update: { passwordHash: playerHash, status: 'ACTIVE' },
     create: {
       email: 'carlos.silva@gmail.com',
-      passwordHash: await bcrypt.hash('Player123!', 12),
+      passwordHash: playerHash,
       role: Role.MEMBER,
       phone: '+56977777777',
+      status: 'ACTIVE',
     },
   });
 
   const casualUser = await prisma.user.upsert({
     where: { email: 'casual@gmail.com' },
-    update: {},
+    update: { passwordHash: casualHash, status: 'ACTIVE' },
     create: {
       email: 'casual@gmail.com',
-      passwordHash: await bcrypt.hash('Casual123!', 12),
+      passwordHash: casualHash,
       role: Role.CASUAL_USER,
       phone: '+56988888888',
+      status: 'ACTIVE',
     },
   });
 
@@ -382,14 +410,14 @@ async function main() {
   console.log('\n🎾 Seed complete!\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📋 Test Accounts:');
-  console.log('  Super Admin:  superadmin@raqueta.app       / SuperAdmin123!');
-  console.log('  Club Admin:   admin@clubtenislascondes.cl  / Admin123!');
-  console.log('  Manager:      manager@clubtenislascondes.cl / Manager123!');
+  console.log('  Super Admin:  superadmin@raqueta.app          / SuperAdmin123!');
+  console.log('  Club Admin:   admin@clubtenislascondes.cl     / Admin123!');
+  console.log('  Manager:      manager@clubtenislascondes.cl   / Manager123!');
   console.log('  Reception:    recepcion@clubtenislascondes.cl / Reception123!');
   console.log('  Instructor:   profe.garcia@clubtenislascondes.cl / Instructor123!');
-  console.log('  Player:       juan.perez@gmail.com         / Player123!');
-  console.log('  Member:       carlos.silva@gmail.com       / Player123!');
-  console.log('  Casual:       casual@gmail.com             / Casual123!');
+  console.log('  Player:       juan.perez@gmail.com            / Player123!');
+  console.log('  Member:       carlos.silva@gmail.com          / Player123!');
+  console.log('  Casual:       casual@gmail.com                / Player123!');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 }
 
