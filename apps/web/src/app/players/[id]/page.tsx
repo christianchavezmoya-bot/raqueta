@@ -29,7 +29,7 @@ export default function PublicPlayerPage() {
     if (mode === 'share' && navigator.share) {
       const response = await fetch(dataUrl);
       const blob = await response.blob();
-      const file = new File([blob], `raqueta-player-${id}.png`, { type: 'image/png' });
+      const file = new File([blob], `ngo-player-${id}.png`, { type: 'image/png' });
       try {
         await navigator.share({ files: [file], title: data?.playerProfile?.displayName ?? 'Estadísticas del jugador' });
         return;
@@ -41,7 +41,7 @@ export default function PublicPlayerPage() {
 
     const anchor = document.createElement('a');
     anchor.href = dataUrl;
-    anchor.download = `raqueta-player-${id}.png`;
+    anchor.download = `ngo-player-${id}.png`;
     anchor.click();
   };
 

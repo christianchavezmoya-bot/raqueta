@@ -37,7 +37,7 @@ export default function RegisterScreen() {
         <View style={s.header}>
           <Text style={s.emoji}>🎾</Text>
           <Text style={s.title}>Crear cuenta</Text>
-          <Text style={s.subtitle}>Únete a la comunidad Raqueta</Text>
+          <Text style={s.subtitle}>Únete a la comunidad N-Go</Text>
         </View>
 
         <View style={s.form}>
@@ -83,12 +83,12 @@ export default function RegisterScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#16a34a' },
+  container: { flex: 1, backgroundColor: '#1b4a86' },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 28 },
   emoji: { fontSize: 48, marginBottom: 8 },
   title: { fontSize: 28, fontWeight: '800', color: '#fff' },
-  subtitle: { fontSize: 15, color: '#bbf7d0', marginTop: 4 },
+  subtitle: { fontSize: 15, color: '#93b9e8', marginTop: 4 },
   form: { backgroundColor: '#fff', borderRadius: 24, padding: 24 },
   inputGroup: { marginBottom: 14 },
   label: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 5 },
@@ -97,17 +97,17 @@ const s = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827',
   },
   infoBox: {
-    backgroundColor: '#f0fdf4', borderRadius: 8, padding: 12, marginBottom: 14,
-    borderWidth: 1, borderColor: '#bbf7d0',
+    backgroundColor: '#eff6ff', borderRadius: 8, padding: 12, marginBottom: 14,
+    borderWidth: 1, borderColor: '#bfdbfe',
   },
-  infoText: { fontSize: 12, color: '#166534', lineHeight: 18 },
+  infoText: { fontSize: 12, color: '#1e40af', lineHeight: 18 },
   button: {
-    backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 14,
+    backgroundColor: '#1b4a86', borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 8,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   link: { alignItems: 'center', marginTop: 18 },
   linkText: { fontSize: 14, color: '#6b7280' },
-  linkBold: { fontWeight: '700', color: '#16a34a' },
+  linkBold: { fontWeight: '700', color: '#1b4a86' },
 });

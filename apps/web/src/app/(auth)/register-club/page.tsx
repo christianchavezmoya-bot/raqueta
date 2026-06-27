@@ -60,7 +60,7 @@ export default function RegisterClubPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4">
             <span className="text-3xl">🎾</span>
           </div>
-          <h1 className="text-3xl font-bold text-white">Raqueta</h1>
+          <h1 className="text-3xl font-bold text-white">N-Go</h1>
           <p className="text-brand-200 mt-1">Prueba gratuita de 14 días — sin tarjeta requerida</p>
         </div>
 
@@ -179,7 +179,7 @@ export default function RegisterClubPage() {
               <li>Sin límites de uso durante la prueba</li>
             </ul>
             <p className="mt-2 text-xs text-brand-600">
-              Tras los 14 días, un administrador de Raqueta activará tu cuenta.
+              Tras los 14 días, un administrador de N-Go activará tu cuenta.
               No existe cargo automático — el upgrade es manual.
             </p>
           </div>

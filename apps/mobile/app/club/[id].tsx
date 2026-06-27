@@ -345,10 +345,24 @@ export default function ClubDetailScreen() {
               </ScrollView>
             </View>
 
+            {/* Step indicator */}
+            <View style={s.stepRow}>
+              <View style={[s.stepDot, !!selectedCourt && s.stepDotDone]} />
+              <View style={[s.stepLine, !!selectedCourt && s.stepLineDone]} />
+              <View style={[s.stepDot, !!selectedCourt && s.stepDotDone]} />
+              <View style={[s.stepLine, !!availability && s.stepLineDone]} />
+              <View style={[s.stepDot, !!availability && s.stepDotDone]} />
+            </View>
+            <View style={s.stepLabels}>
+              <Text style={s.stepLabel}>Cancha</Text>
+              <Text style={s.stepLabel}>Fecha</Text>
+              <Text style={s.stepLabel}>Horario</Text>
+            </View>
+
             {!selectedCourt ? (
               <View style={s.empty}>
                 <Ionicons name="tennisball-outline" size={40} color="#d1d5db" />
-                <Text style={s.emptyText}>Selecciona una cancha</Text>
+                <Text style={s.emptyText}>Selecciona una cancha arriba</Text>
               </View>
             ) : !availability ? (
               <ActivityIndicator color={accentColor} style={{ marginTop: 32 }} />
@@ -370,7 +384,7 @@ export default function ClubDetailScreen() {
                         key={slot.startTime}
                         style={[
                           s.slotCard,
-                          !slot.available && s.slotCardUnavailable,
+                          slot.available ? s.slotCardAvail : s.slotCardUnavailable,
                         ]}
                         onPress={() => slot.available && handleReserve(slot)}
                         disabled={!slot.available || reserveMutation.isPending}
@@ -459,8 +473,16 @@ const s = StyleSheet.create({
   dateChipTextActive: { color: '#fff' },
   slots: { gap: 8 },
   slotsTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 4, textTransform: 'capitalize' },
-  slotCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 1 },
-  slotCardUnavailable: { backgroundColor: '#f9fafb', opacity: 0.7 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, marginTop: 4 },
+  stepDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#d1d5db' },
+  stepDotDone: { backgroundColor: '#1b4a86' },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#d1d5db' },
+  stepLineDone: { backgroundColor: '#1b4a86' },
+  stepLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  stepLabel: { fontSize: 11, color: '#6b7280', fontWeight: '600', textAlign: 'center' },
+  slotCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 1, borderLeftWidth: 4, borderLeftColor: 'transparent' },
+  slotCardAvail: { borderLeftColor: '#1b4a86' },
+  slotCardUnavailable: { backgroundColor: '#f9fafb', opacity: 0.65 },
   slotTime: { fontSize: 15, fontWeight: '700', color: '#111827' },
   slotTimeUnavailable: { color: '#9ca3af' },
   slotBadgeAvail: { backgroundColor: '#f0fdf4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },

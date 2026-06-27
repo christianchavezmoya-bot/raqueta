@@ -32,7 +32,7 @@ export class TenisChileService {
     const url = `${this.baseUrl}/jugador/${playerId}`;
     const response = await fetch(url, {
       headers: {
-        'user-agent': 'RaquetaBot/1.0 (+https://raqueta.app)',
+        'user-agent': 'NGoBot/1.0 (+https://n-go.app)',
         accept: 'text/html,application/xhtml+xml',
       },
     });

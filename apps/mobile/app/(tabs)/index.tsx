@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   RefreshControl, ActivityIndicator, Alert,
@@ -44,6 +44,22 @@ export default function HomeScreen() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';
 
+  const [availDuration, setAvailDuration] = useState('');
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const updateDuration = () => {
+      if (!isAvailable || !profile?.locationUpdatedAt) { setAvailDuration(''); return; }
+      const mins = Math.floor((Date.now() - new Date(profile.locationUpdatedAt).getTime()) / 60000);
+      setAvailDuration(mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`);
+    };
+    updateDuration();
+    if (isAvailable) {
+      intervalRef.current = setInterval(updateDuration, 30000);
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [isAvailable, profile?.locationUpdatedAt]);
+
   const handleAvailabilityPress = () => {
     if (toggleAvail.isPending) return;
 
@@ -82,7 +98,7 @@ export default function HomeScreen() {
   };
 
   const quickActions = [
-    { label: 'Reservar cancha', icon: 'tennisball', color: '#16a34a', onPress: () => router.push('/(tabs)/explore') },
+    { label: 'Reservar cancha', icon: 'tennisball', color: '#1b4a86', onPress: () => router.push('/(tabs)/explore') },
     { label: 'Ver torneos', icon: 'trophy', color: '#d97706', onPress: () => router.push('/(tabs)/tournaments') },
     { label: 'Buscar jugadores', icon: 'people', color: '#0284c7', onPress: () => router.push('/(tabs)/explore') },
     { label: 'Mi log', icon: 'clipboard', color: '#7c3aed', onPress: () => router.push('/(tabs)/profile') },
@@ -105,7 +121,7 @@ export default function HomeScreen() {
           >
             {toggleAvail.isPending
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.availBtnText}>{isAvailable ? '✓ Disponible' : 'Disponible'}</Text>}
+              : <Text style={[s.availBtnText, isAvailable && s.availBtnTextOn]}>{isAvailable ? `● Disponible${availDuration ? ` · ${availDuration}` : ''}` : 'Disponible'}</Text>}
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={s.avatar}>
             <Text style={s.avatarText}>
@@ -150,7 +166,7 @@ export default function HomeScreen() {
         {/* Clubs nearby */}
         <Text style={s.sectionTitle}>Clubes disponibles</Text>
         {isLoading ? (
-          <ActivityIndicator color="#16a34a" style={{ marginTop: 16 }} />
+          <ActivityIndicator color="#1b4a86" style={{ marginTop: 16 }} />
         ) : (
           clubs?.data?.map((club: any) => (
             <TouchableOpacity
@@ -160,7 +176,7 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <View style={s.clubIconWrap}>
-                <Ionicons name="business" size={22} color="#16a34a" />
+                <Ionicons name="business" size={22} color="#1b4a86" />
               </View>
               <View style={s.clubInfo}>
                 <Text style={s.clubName}>{club.name}</Text>
@@ -179,9 +195,9 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#16a34a', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 24,
+    backgroundColor: '#1b4a86', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 24,
   },
-  greeting: { fontSize: 15, color: '#bbf7d0', fontWeight: '500' },
+  greeting: { fontSize: 15, color: '#93b9e8', fontWeight: '500' },
   name: { fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 2 },
   avatar: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.25)',
@@ -192,17 +208,18 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
   },
-  availBtnOn: { backgroundColor: '#15803d', borderColor: '#15803d' },
-  availBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  availBtnOn: { backgroundColor: '#e5ff2c', borderColor: '#e5ff2c' },
+  availBtnText: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+  availBtnTextOn: { color: '#1b4a86' },
   scroll: { padding: 16, paddingBottom: 24 },
   nextBanner: {
-    backgroundColor: '#16a34a', borderRadius: 16, padding: 18, marginBottom: 20,
+    backgroundColor: '#1b4a86', borderRadius: 16, padding: 18, marginBottom: 20,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   nextBannerLeft: {},
-  nextBannerLabel: { fontSize: 12, color: '#bbf7d0', fontWeight: '600', marginBottom: 4 },
+  nextBannerLabel: { fontSize: 12, color: '#93b9e8', fontWeight: '600', marginBottom: 4 },
   nextBannerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  nextBannerTime: { fontSize: 13, color: '#dcfce7', marginTop: 4 },
+  nextBannerTime: { fontSize: 13, color: '#bfdbfe', marginTop: 4 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 12, marginTop: 4 },
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
   quickCard: {
@@ -217,7 +234,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
-  clubIconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#f0fdf4', justifyContent: 'center', alignItems: 'center' },
+  clubIconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
   clubInfo: { flex: 1 },
   clubName: { fontSize: 15, fontWeight: '700', color: '#111827' },
   clubCity: { fontSize: 13, color: '#6b7280', marginTop: 2 },

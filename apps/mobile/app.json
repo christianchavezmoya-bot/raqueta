@@ -9,11 +9,11 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#16a34a"
+      "backgroundColor": "#1b4a86"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.raqueta",
+      "bundleIdentifier": "app.ngo",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Usamos tu ubicación solo mientras activas Disponible para partidos y para encontrar jugadores cercanos.",
         "NSLocationTemporaryUsageDescriptionDictionary": {
@@ -24,9 +24,9 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#16a34a"
+        "backgroundColor": "#1b4a86"
       },
-      "package": "app.raqueta",
+      "package": "app.ngo",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -35,7 +35,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "raqueta",
+    "scheme": "ngo",
     "plugins": ["expo-router"]
   }
 }

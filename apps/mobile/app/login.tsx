@@ -95,7 +95,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.emoji}>🎾</Text>
-          <Text style={styles.title}>Raqueta</Text>
+          <Text style={styles.title}>N-Go</Text>
           <Text style={styles.subtitle}>Tu comunidad de tenis</Text>
         </View>
 
@@ -152,12 +152,12 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#16a34a' },
+  container: { flex: 1, backgroundColor: '#1b4a86' },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 32 },
   emoji: { fontSize: 56, marginBottom: 8 },
   title: { fontSize: 32, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  subtitle: { fontSize: 16, color: '#bbf7d0', marginTop: 4 },
+  subtitle: { fontSize: 16, color: '#93b9e8', marginTop: 4 },
   form: {
     backgroundColor: '#fff', borderRadius: 24, padding: 24,
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
@@ -174,18 +174,18 @@ const styles = StyleSheet.create({
   },
   otpInput: { textAlign: 'center', fontSize: 28, fontWeight: '800', letterSpacing: 10 },
   button: {
-    backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 14,
+    backgroundColor: '#1b4a86', borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 8,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   registerLink: { alignItems: 'center', marginTop: 20 },
   registerText: { fontSize: 14, color: '#6b7280' },
-  registerTextBold: { fontWeight: '700', color: '#16a34a' },
+  registerTextBold: { fontWeight: '700', color: '#1b4a86' },
   demo: {
-    marginTop: 24, backgroundColor: 'rgba(255,255,255,0.15)',
+    marginTop: 24, backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 12, padding: 16,
   },
   demoTitle: { fontSize: 13, fontWeight: '600', color: '#fff', marginBottom: 6 },
-  demoText: { fontSize: 12, color: '#dcfce7', marginBottom: 2 },
+  demoText: { fontSize: 12, color: '#93b9e8', marginBottom: 2 },
 });

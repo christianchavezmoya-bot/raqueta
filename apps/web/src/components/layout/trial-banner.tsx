@@ -34,7 +34,7 @@ export default function TrialBanner() {
           ⚠️ Tu período de prueba ha vencido. El club está bloqueado para escritura.
         </span>
         <span className="text-red-500 text-sm">
-          Contacta a soporte de Raqueta para reactivar tu cuenta.
+          Contacta a soporte de N-Go para reactivar tu cuenta.
         </span>
       </div>
     );
@@ -53,7 +53,7 @@ export default function TrialBanner() {
         <strong>
           {trial.daysRemaining === 0 ? 'vence hoy' : `${trial.daysRemaining} día${trial.daysRemaining === 1 ? '' : 's'} restante${trial.daysRemaining === 1 ? '' : 's'}`}
         </strong>
-        . Para continuar después, contacta a soporte de Raqueta.
+        . Para continuar después, contacta a soporte de N-Go.
       </span>
     </div>
   );

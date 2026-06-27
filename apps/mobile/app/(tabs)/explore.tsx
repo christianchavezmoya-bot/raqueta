@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -177,7 +178,7 @@ export default function ExploreScreen() {
       {tab === 'clubs' && clubView === 'map' ? (
         <View style={s.mapWrap}>
           {clubsLoading ? (
-            <ActivityIndicator color="#16a34a" style={{ marginTop: 40 }} />
+            <ActivityIndicator color="#1b4a86" style={{ marginTop: 40 }} />
           ) : (
             <>
               <MapView
@@ -227,14 +228,18 @@ export default function ExploreScreen() {
           }
           ListEmptyComponent={
             clubsLoading
-              ? <ActivityIndicator color="#16a34a" style={{ marginTop: 40 }} />
+              ? <ActivityIndicator color="#1b4a86" style={{ marginTop: 40 }} />
               : <Text style={s.empty}>No se encontraron clubes</Text>
           }
           renderItem={({ item: club }) => (
             <TouchableOpacity style={s.card} onPress={() => router.push(`/club/${club.id}` as any)} activeOpacity={0.8}>
-              <View style={s.cardIcon}>
-                <Ionicons name="business" size={24} color="#16a34a" />
-              </View>
+              {club.profile?.logoUrl ? (
+                <Image source={{ uri: club.profile.logoUrl }} style={s.clubLogo} />
+              ) : (
+                <View style={s.cardIcon}>
+                  <Ionicons name="business" size={24} color="#1b4a86" />
+                </View>
+              )}
               <View style={s.cardInfo}>
                 <Text style={s.cardTitle}>{club.name}</Text>
                 <Text style={s.cardSubtitle}>{club.profile?.city ? `📍 ${club.profile.city}` : 'Chile'}</Text>
@@ -260,7 +265,7 @@ export default function ExploreScreen() {
           }
           ListEmptyComponent={
             playersLoading
-              ? <ActivityIndicator color="#16a34a" style={{ marginTop: 40 }} />
+              ? <ActivityIndicator color="#1b4a86" style={{ marginTop: 40 }} />
               : <Text style={s.empty}>No hay jugadores disponibles con estos filtros</Text>
           }
           renderItem={({ item: player }) => (
@@ -303,22 +308,31 @@ export default function ExploreScreen() {
           contentContainerStyle={s.list}
           ListEmptyComponent={
             invLoading
-              ? <ActivityIndicator color="#16a34a" style={{ marginTop: 40 }} />
+              ? <ActivityIndicator color="#1b4a86" style={{ marginTop: 40 }} />
               : <Text style={s.empty}>No tienes invitaciones</Text>
           }
           renderItem={({ item: invitation }) => (
             <View style={s.invCard}>
               {invitation._section === 'received' && (
                 <>
-                  <Text style={s.invTitle}>
-                    <Text style={s.invName}>{invitation.requester?.displayName}</Text> te invitó a jugar
-                  </Text>
-                  <Text style={s.invSub}>Nivel: {LEVEL_LABELS[invitation.requester?.level] ?? invitation.requester?.level}</Text>
+                  <View style={s.invAvatarRow}>
+                    <View style={s.invAvatar}>
+                      <Text style={s.invAvatarText}>{(invitation.requester?.displayName ?? 'J')[0].toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.invTitle}>
+                        <Text style={s.invName}>{invitation.requester?.displayName}</Text> te invitó a jugar
+                      </Text>
+                      <Text style={s.invSub}>Nivel: {LEVEL_LABELS[invitation.requester?.level] ?? invitation.requester?.level}</Text>
+                    </View>
+                  </View>
                   <View style={s.invActions}>
                     <TouchableOpacity style={s.acceptBtn} onPress={() => acceptInvite.mutate(invitation.id)}>
+                      <Ionicons name="checkmark" size={16} color="#fff" />
                       <Text style={s.acceptBtnText}>Aceptar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={s.declineBtn} onPress={() => declineInvite.mutate(invitation.id)}>
+                      <Ionicons name="close" size={16} color="#dc2626" />
                       <Text style={s.declineBtnText}>Rechazar</Text>
                     </TouchableOpacity>
                   </View>
@@ -377,9 +391,9 @@ const s = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: '#111827' },
   tabs: { flexDirection: 'row', gap: 0, marginBottom: -1 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: '#16a34a' },
+  tabActive: { borderBottomColor: '#1b4a86' },
   tabText: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
-  tabTextActive: { color: '#16a34a' },
+  tabTextActive: { color: '#1b4a86' },
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, flexWrap: 'wrap' },
   toolBtn: {
     flexDirection: 'row',
@@ -392,7 +406,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  toolBtnActive: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
+  toolBtnActive: { backgroundColor: '#1b4a86', borderColor: '#1b4a86' },
   toolBtnText: { fontSize: 12, fontWeight: '700', color: '#374151' },
   toolBtnTextActive: { color: '#fff' },
   toolbarHint: { fontSize: 12, color: '#6b7280' },
@@ -415,18 +429,19 @@ const s = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 12,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: '#eff6ff',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  clubLogo: { width: 46, height: 46, borderRadius: 12 },
   cardInfo: { flex: 1 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
   cardSubtitle: { fontSize: 13, color: '#6b7280', marginTop: 2 },
   warningTag: { fontSize: 11, color: '#b45309', marginTop: 4 },
   distanceTag: { fontSize: 11, color: '#2563eb', marginTop: 4, fontWeight: '700' },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  tag: { fontSize: 11, color: '#16a34a' },
-  inviteBtn: { backgroundColor: '#16a34a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  tag: { fontSize: 11, color: '#1b4a86' },
+  inviteBtn: { backgroundColor: '#1b4a86', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
   inviteBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   empty: { textAlign: 'center', color: '#9ca3af', marginTop: 40, fontSize: 14 },
   mapWrap: { flex: 1, padding: 16 },
@@ -461,13 +476,16 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  invAvatarRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  invAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1b4a86', justifyContent: 'center', alignItems: 'center' },
+  invAvatarText: { fontSize: 18, fontWeight: '800', color: '#fff' },
   invTitle: { fontSize: 14, color: '#374151', lineHeight: 20 },
   invName: { fontWeight: '700', color: '#111827' },
-  invSub: { fontSize: 13, color: '#6b7280', marginTop: 4 },
-  invActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  acceptBtn: { flex: 1, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 9, alignItems: 'center' },
+  invSub: { fontSize: 13, color: '#6b7280', marginTop: 3 },
+  invActions: { flexDirection: 'row', gap: 10 },
+  acceptBtn: { flex: 1, backgroundColor: '#1b4a86', borderRadius: 10, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   acceptBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  declineBtn: { flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, paddingVertical: 9, alignItems: 'center' },
-  declineBtnText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  phoneText: { fontSize: 14, fontWeight: '600', color: '#16a34a', marginTop: 6 },
+  declineBtn: { flex: 1, borderWidth: 1.5, borderColor: '#fca5a5', backgroundColor: '#fff1f2', borderRadius: 10, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  declineBtnText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
+  phoneText: { fontSize: 14, fontWeight: '600', color: '#1b4a86', marginTop: 6 },
 });

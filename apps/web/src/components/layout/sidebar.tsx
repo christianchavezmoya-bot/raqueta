@@ -39,9 +39,10 @@ export default function Sidebar() {
     <div className="flex h-screen w-64 flex-col bg-gray-900 text-white">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-700">
-        <span className="text-2xl">🎾</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/ngo-logo.svg" width={40} height={40} className="rounded-xl flex-shrink-0" alt="N-Go" />
         <div>
-          <p className="font-bold text-white leading-tight">Raqueta</p>
+          <p className="font-bold text-white leading-tight">N-Go</p>
           <p className="text-xs text-gray-400">Business App</p>
         </div>
       </div>

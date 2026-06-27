@@ -4,7 +4,7 @@ import Providers from '@/components/providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Raqueta | Tennis Club Management',
+  title: 'N-Go | Tennis Club Management',
   description: 'Plataforma de gestión para clubes de tenis',
 };
 
