@@ -18,6 +18,8 @@ export default function ProfileScreen() {
   const [show2FADisable, setShow2FADisable] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
   const [runValue, setRunValue] = useState('');
+  const [childRut, setChildRut] = useState('');
+  const [requestingLink, setRequestingLink] = useState(false);
 
   const { data: me, refetch: refetchMe } = useQuery({
     queryKey: ['me-profile'],
@@ -68,6 +70,26 @@ export default function ProfileScreen() {
     onError: (err: any) => Alert.alert('No se pudo desvincular', err.response?.data?.message ?? 'Error'),
   });
 
+  const { data: myChildrenData, refetch: refetchChildren } = useQuery({
+    queryKey: ['my-children'],
+    queryFn: async () => { const { data } = await api.get('/players/me/children'); return data as any[]; },
+  });
+
+  const handleRequestLink = async () => {
+    if (!childRut.trim()) return;
+    setRequestingLink(true);
+    try {
+      await api.post('/players/me/children/request-link', { childRut: childRut.trim() });
+      setChildRut('');
+      refetchChildren();
+      Alert.alert('Solicitud enviada', 'La solicitud está pendiente de aprobación por el club del menor.');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'No se pudo enviar la solicitud');
+    } finally {
+      setRequestingLink(false);
+    }
+  };
+
   const updateVisibility = useMutation({
     mutationFn: (payload: any) => api.patch('/players/me/availability/settings', payload),
     onSuccess: () => {
@@ -79,6 +101,7 @@ export default function ProfileScreen() {
 
   const profile = me?.playerProfile;
   const stats = profile?.stats;
+  const myChildren = myChildrenData ?? [];
 
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -162,6 +185,16 @@ export default function ProfileScreen() {
           <Text style={s.levelText}>{LEVEL_LABELS[profile?.level] ?? 'Principiante'}</Text>
         </View>
       </View>
+
+      {/* canTransact=false restriction banner */}
+      {profile && profile.canTransact === false && (
+        <View style={s.restrictionBanner}>
+          <Ionicons name="lock-closed-outline" size={18} color="#b45309" />
+          <Text style={s.restrictionText}>
+            Esta cuenta no puede realizar transacciones. Contacta a un tutor o al staff del club.
+          </Text>
+        </View>
+      )}
 
       {/* Stats */}
       <View style={s.statsRow}>
@@ -272,6 +305,49 @@ export default function ProfileScreen() {
           <Text style={s.menuLabel}>Ver ranking interno del club</Text>
           <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
+      </View>
+
+      {/* My Children (parent delegation) */}
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Mis hijos vinculados</Text>
+        <View style={s.childLinkForm}>
+          <TextInput
+            style={s.childRutInput}
+            value={childRut}
+            onChangeText={setChildRut}
+            placeholder="RUT del menor (ej: 12.345.678-9)"
+            placeholderTextColor="#9ca3af"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[s.childLinkBtn, (!childRut.trim() || requestingLink) && { opacity: 0.5 }]}
+            onPress={handleRequestLink}
+            disabled={!childRut.trim() || requestingLink}
+          >
+            {requestingLink
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.childLinkBtnText}>Solicitar</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {myChildren.length === 0 ? (
+          <Text style={s.emptyText}>Sin hijos vinculados</Text>
+        ) : myChildren.map((c: any) => {
+          const statusColor = c.status === 'APPROVED' ? '#16a34a' : c.status === 'PENDING' ? '#d97706' : '#dc2626';
+          const statusLabel = c.status === 'APPROVED' ? 'Aprobado' : c.status === 'PENDING' ? 'Pendiente' : 'Rechazado';
+          return (
+            <View key={c.linkId} style={s.childCard}>
+              <View style={s.childInfo}>
+                <Text style={s.childName}>{c.child.profile?.displayName ?? c.child.email}</Text>
+                <Text style={s.childSub}>{c.club?.name}</Text>
+                {c.status === 'APPROVED' && c.child.profile?.canTransact === false && (
+                  <Text style={s.childRestricted}>Transacciones bloqueadas</Text>
+                )}
+              </View>
+              <Text style={[s.childStatus, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
+          );
+        })}
       </View>
 
       {/* Menu */}
@@ -451,4 +527,16 @@ const s = StyleSheet.create({
   runRefreshText: { color: '#fff', fontWeight: '700' },
   runUnlinkBtn: { marginTop: 12, backgroundColor: '#fff5f5', borderRadius: 10, paddingVertical: 11, alignItems: 'center', flex: 1, borderWidth: 1, borderColor: '#fecaca' },
   runUnlinkText: { color: '#dc2626', fontWeight: '700' },
+  restrictionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fffbeb', borderLeftWidth: 4, borderLeftColor: '#d97706', marginHorizontal: 0, paddingHorizontal: 14, paddingVertical: 12 },
+  restrictionText: { flex: 1, fontSize: 13, color: '#92400e', lineHeight: 18 },
+  childLinkForm: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  childRutInput: { flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#111827', backgroundColor: '#fff' },
+  childLinkBtn: { backgroundColor: '#16a34a', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
+  childLinkBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  childCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
+  childInfo: { flex: 1 },
+  childName: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  childSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  childRestricted: { fontSize: 11, color: '#dc2626', marginTop: 3, fontWeight: '600' },
+  childStatus: { fontSize: 12, fontWeight: '700' },
 });

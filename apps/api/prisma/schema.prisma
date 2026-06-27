@@ -170,6 +170,12 @@ enum RankingSeasonStatus {
   CLOSED
 }
 
+enum ParentChildLinkStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -215,6 +221,12 @@ model User {
   enteredClubMatchResults ClubMatchResult[]
   sentClubAnnouncements   ClubAnnouncement[]       @relation("ClubAnnouncementSender")
   givenBonusAwards        ClubBonusPointAward[]
+  parentLinks             ParentChildLink[]        @relation("ParentLinks")
+  childLinks              ParentChildLink[]        @relation("ChildLinks")
+  approvedLinks           ParentChildLink[]        @relation("ApprovedLinks")
+  actedPayments           Payment[]                @relation("ActedPayments")
+  actedRegistrations      TournamentRegistration[] @relation("ActedRegistrations")
+  actedInvitations        MatchInvitation[]        @relation("ActedInvitations")
 
   @@map("users")
 }
@@ -267,6 +279,10 @@ model PlayerProfile {
 
   // Stage 6 — RUT for roster linking
   rut String? @unique
+
+  // Stage 10 — parent/child accounts
+  canTransact    Boolean @default(true) @map("can_transact")
+  isMinorAccount Boolean @default(false) @map("is_minor_account")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -336,6 +352,7 @@ model Club {
   divisionConfigs    ClubDivisionConfig[]
   bonusPointTypes    ClubBonusPointType[]
   bonusPointAwards   ClubBonusPointAward[]
+  parentChildLinks   ParentChildLink[]
 
   @@map("clubs")
 }
@@ -575,6 +592,7 @@ model Payment {
   status                   PaymentStatus @default(PENDING)
   paidAt                   DateTime?     @map("paid_at")
   confirmedBy              String?       @map("confirmed_by")
+  actedByUserId            String?       @map("acted_by_user_id")
   notes                    String?
   reference                String?
   createdAt                DateTime      @default(now()) @map("created_at")
@@ -585,6 +603,7 @@ model Payment {
   reservation            Reservation?            @relation(fields: [reservationId], references: [id])
   membership             Membership?             @relation(fields: [membershipId], references: [id])
   confirmedByUser        User?                   @relation("ConfirmedPayments", fields: [confirmedBy], references: [id])
+  actedByUser            User?                   @relation("ActedPayments", fields: [actedByUserId], references: [id])
   tournamentRegistration TournamentRegistration? @relation(fields: [tournamentRegistrationId], references: [id])
 
   @@map("payments")
@@ -639,15 +658,17 @@ model TournamentRegistration {
   tournamentId  String        @map("tournament_id")
   categoryId    String        @map("category_id")
   playerId      String        @map("player_id")
+  actedByUserId String?       @map("acted_by_user_id")
   status        String        @default("PENDING")
   paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
   seedNumber    Int?          @map("seed_number")
   registeredAt  DateTime      @default(now()) @map("registered_at")
 
-  tournament Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  category   TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  player     User               @relation(fields: [playerId], references: [id])
-  payments   Payment[]
+  tournament  Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category    TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  player      User               @relation(fields: [playerId], references: [id])
+  actedByUser User?              @relation("ActedRegistrations", fields: [actedByUserId], references: [id])
+  payments    Payment[]
 
   @@map("tournament_registrations")
 }
@@ -922,16 +943,18 @@ model AuditLog {
 // ─── MATCH INVITATIONS (Stage 3) ─────────────────────────────────────────────
 
 model MatchInvitation {
-  id          String           @id @default(uuid())
-  requesterId String           @map("requester_id")
-  recipientId String           @map("recipient_id")
-  status      InvitationStatus @default(PENDING)
-  message     String?
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id            String           @id @default(uuid())
+  requesterId   String           @map("requester_id")
+  recipientId   String           @map("recipient_id")
+  actedByUserId String?          @map("acted_by_user_id")
+  status        InvitationStatus @default(PENDING)
+  message       String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
 
-  requester PlayerProfile @relation("SentInvitations", fields: [requesterId], references: [id], onDelete: Cascade)
-  recipient PlayerProfile @relation("ReceivedInvitations", fields: [recipientId], references: [id], onDelete: Cascade)
+  requester   PlayerProfile @relation("SentInvitations", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient   PlayerProfile @relation("ReceivedInvitations", fields: [recipientId], references: [id], onDelete: Cascade)
+  actedByUser User?         @relation("ActedInvitations", fields: [actedByUserId], references: [id])
 
   @@map("match_invitations")
 }
@@ -958,4 +981,24 @@ model MatchLogEntry {
   opponent PlayerProfile? @relation("OpponentMatchLogs", fields: [opponentId], references: [id])
 
   @@map("match_log_entries")
+}
+
+// ─── PARENT-CHILD LINKS (Stage 10) ───────────────────────────────────────────
+
+model ParentChildLink {
+  id               String                @id @default(uuid())
+  parentUserId     String                @map("parent_user_id")
+  childUserId      String                @map("child_user_id")
+  clubId           String                @map("club_id")
+  status           ParentChildLinkStatus @default(PENDING)
+  requestedAt      DateTime              @default(now()) @map("requested_at")
+  approvedByUserId String?               @map("approved_by_user_id")
+  approvedAt       DateTime?             @map("approved_at")
+
+  parent     User  @relation("ParentLinks",   fields: [parentUserId],     references: [id])
+  child      User  @relation("ChildLinks",    fields: [childUserId],      references: [id])
+  club       Club  @relation(fields: [clubId], references: [id])
+  approvedBy User? @relation("ApprovedLinks", fields: [approvedByUserId], references: [id])
+
+  @@map("parent_child_links")
 }

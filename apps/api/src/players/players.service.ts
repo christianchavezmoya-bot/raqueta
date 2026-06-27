@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MatchStatus } from '@prisma/client';
+import { MatchStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
 import { TenisChileService } from '../common/integrations/tenischile/tenischile.service';
@@ -536,14 +536,71 @@ export class PlayersService {
     };
   }
 
-  async updateRole(userId: string, role: string) {
-    const allowed = ['PLAYER', 'MEMBER', 'CASUAL_USER'];
-    if (!allowed.includes(role)) throw new ForbiddenException('Cannot assign this role');
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { role: role as any },
+  async updateRole(
+    actorId: string,
+    actorRole: string,
+    actorStaffClubId: string | null,
+    targetUserId: string,
+    role: string,
+  ) {
+    if (actorId === targetUserId) {
+      throw new ForbiddenException('You cannot change your own role');
+    }
+
+    const validRoles = Object.values(Role) as string[];
+    if (!validRoles.includes(role)) {
+      throw new BadRequestException(`Invalid role: ${role}`);
+    }
+
+    const elevatedRoles: Role[] = [Role.SUPER_ADMIN, Role.CLUB_ADMIN];
+    const staffGrantableRoles: Role[] = [Role.MANAGER, Role.RECEPTION, Role.INSTRUCTOR];
+    const demotableRoles: Role[] = [Role.PLAYER, Role.MEMBER, Role.CASUAL_USER, Role.PARENT];
+
+    if (actorRole !== Role.SUPER_ADMIN) {
+      if (elevatedRoles.includes(role as Role)) {
+        throw new ForbiddenException('Only SUPER_ADMIN can grant elevated roles');
+      }
+      if (!staffGrantableRoles.includes(role as Role) && !demotableRoles.includes(role as Role)) {
+        throw new ForbiddenException('You cannot assign this role');
+      }
+      if (!actorStaffClubId) {
+        throw new ForbiddenException('No club assigned to your account');
+      }
+      const target = await this.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { staffClubId: true, playerProfile: { select: { homeClubId: true } } },
+      });
+      if (!target) throw new NotFoundException('User not found');
+      const targetClubId = target.staffClubId ?? target.playerProfile?.homeClubId ?? null;
+      if (targetClubId !== actorStaffClubId) {
+        throw new ForbiddenException('Cannot manage users from other clubs');
+      }
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { role: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
+    const updated = await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { role: role as Role },
       select: { id: true, email: true, role: true },
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: actorId,
+        entityType: 'User',
+        entityId: targetUserId,
+        action: 'UPDATE_ROLE',
+        oldValue: { role: target.role },
+        newValue: { role: updated.role },
+      },
+    });
+
+    return updated;
   }
 
   async getStats(userId: string) {

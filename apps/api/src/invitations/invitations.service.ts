@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertCanActForPlayer } from '../common/utils/transact-gate';
 
 @Injectable()
 export class InvitationsService {
@@ -14,13 +15,32 @@ export class InvitationsService {
     private notifications: NotificationsService,
   ) {}
 
-  async sendInvitation(requesterId: string, recipientUserId: string, message?: string) {
+  async sendInvitation(
+    actorUserId: string,
+    recipientUserId: string,
+    message?: string,
+    forChildUserId?: string | null,
+  ) {
+    let senderUserId = actorUserId;
+    let actedByUserId: string | null = null;
+
+    if (forChildUserId) {
+      const childProfile = await this.prisma.playerProfile.findUnique({
+        where: { userId: forChildUserId },
+        select: { id: true },
+      });
+      if (!childProfile) throw new NotFoundException('Child player profile not found');
+      await assertCanActForPlayer(actorUserId, childProfile.id, this.prisma);
+      senderUserId = forChildUserId;
+      actedByUserId = actorUserId;
+    }
+
     // Resolve sender's PlayerProfile
     const requesterProfile = await this.prisma.playerProfile.findUnique({
-      where: { userId: requesterId },
+      where: { userId: senderUserId },
       select: { id: true, displayName: true, publicVisibility: true },
     });
-    if (!requesterProfile) throw new NotFoundException('Your player profile was not found');
+    if (!requesterProfile) throw new NotFoundException('Sender player profile was not found');
 
     // Resolve recipient's PlayerProfile
     const recipientProfile = await this.prisma.playerProfile.findUnique({
@@ -51,6 +71,7 @@ export class InvitationsService {
       data: {
         requesterId: requesterProfile.id,
         recipientId: recipientProfile.id,
+        actedByUserId,
         message,
       },
     });

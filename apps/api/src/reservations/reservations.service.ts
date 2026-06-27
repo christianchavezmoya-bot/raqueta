@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ClubsService } from '../clubs/clubs.service';
 import { CourtsService } from '../courts/courts.service';
 import { MembershipsService } from '../memberships/memberships.service';
+import { assertCanActForPlayer } from '../common/utils/transact-gate';
 
 @Injectable()
 export class ReservationsService {
@@ -50,10 +51,23 @@ export class ReservationsService {
     endTime: Date;
     createdBy: string;
     notes?: string;
+    forChildUserId?: string | null;
   }) {
+    let { userId } = data;
+
+    if (data.forChildUserId) {
+      const childProfile = await this.prisma.playerProfile.findUnique({
+        where: { userId: data.forChildUserId },
+        select: { id: true },
+      });
+      if (!childProfile) throw new NotFoundException('Child player profile not found');
+      await assertCanActForPlayer(data.createdBy, childProfile.id, this.prisma);
+      userId = data.forChildUserId;
+    }
+
     await this.validateSlot(data.courtId, data.clubId, data.startTime, data.endTime);
 
-    const isMember = await this.membershipsService.isMember(data.userId, data.clubId);
+    const isMember = await this.membershipsService.isMember(userId, data.clubId);
     const court = await this.courtsService.findOne(data.courtId);
     const pricingKey = isMember ? 'MEMBER' : 'CASUAL';
     const pricing = court.pricing.find(p => p.userType === pricingKey) ?? court.pricing[0];
@@ -62,7 +76,13 @@ export class ReservationsService {
 
     return this.prisma.reservation.create({
       data: {
-        ...data,
+        clubId: data.clubId,
+        courtId: data.courtId,
+        userId,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        createdBy: data.createdBy,
+        notes: data.notes,
         price,
         status: 'PENDING_PAYMENT',
         paymentStatus: 'PENDING',

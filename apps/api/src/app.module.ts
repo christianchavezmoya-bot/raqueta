@@ -26,6 +26,7 @@ import { ClubRankingsModule } from './club-rankings/club-rankings.module';
 import { ClubAnnouncementsModule } from './club-announcements/club-announcements.module';
 import { HistoryModule } from './history/history.module';
 import { AdminModule } from './admin/admin.module';
+import { ParentChildModule } from './parent-child/parent-child.module';
 
 @Module({
   providers: [
@@ -60,6 +61,7 @@ import { AdminModule } from './admin/admin.module';
     ClubRankingsModule,
     HistoryModule,
     AdminModule,
+    ParentChildModule,
   ],
 })
 export class AppModule {}

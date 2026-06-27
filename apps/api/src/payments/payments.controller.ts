@@ -27,9 +27,15 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @Post('payments')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create payment record' })
-  create(@Body() body: any, @CurrentUser('id') userId: string) {
-    return this.paymentsService.create({ ...body, userId });
+  @ApiOperation({ summary: 'Create payment record (optionally for a linked child via forChildUserId)' })
+  create(@Body() body: any, @CurrentUser('id') actorId: string) {
+    const { forChildUserId, ...rest } = body;
+    return this.paymentsService.create({
+      ...rest,
+      userId: actorId,
+      actorId,
+      forChildUserId: forChildUserId ?? null,
+    });
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

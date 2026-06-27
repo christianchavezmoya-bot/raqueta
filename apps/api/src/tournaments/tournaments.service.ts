@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertCanActForPlayer } from '../common/utils/transact-gate';
 
 @Injectable()
 export class TournamentsService {
@@ -70,10 +71,29 @@ export class TournamentsService {
     return this.prisma.tournamentCategory.create({ data: { ...data, tournamentId } });
   }
 
-  async register(tournamentId: string, categoryId: string, playerId: string) {
+  async register(
+    tournamentId: string,
+    categoryId: string,
+    actorId: string,
+    forChildUserId?: string | null,
+  ) {
     const tournament = await this.ensureExists(tournamentId);
     if (tournament.status !== 'REGISTRATION_OPEN') {
       throw new BadRequestException('Registration is not open');
+    }
+
+    let playerId = actorId;
+    let actedByUserId: string | null = null;
+
+    if (forChildUserId) {
+      const childProfile = await this.prisma.playerProfile.findUnique({
+        where: { userId: forChildUserId },
+        select: { id: true },
+      });
+      if (!childProfile) throw new NotFoundException('Child player profile not found');
+      await assertCanActForPlayer(actorId, childProfile.id, this.prisma);
+      playerId = forChildUserId;
+      actedByUserId = actorId;
     }
 
     const existing = await this.prisma.tournamentRegistration.findFirst({
@@ -86,6 +106,7 @@ export class TournamentsService {
         tournamentId,
         categoryId,
         playerId,
+        actedByUserId,
         status: 'PENDING',
         paymentStatus: tournament.price > 0 ? 'PENDING' : 'PAID',
       },

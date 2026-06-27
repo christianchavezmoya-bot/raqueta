@@ -26,12 +26,14 @@ export class ReservationsController {
   @UseGuards(JwtAuthGuard)
   @Post('reservations')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create reservation' })
-  create(@Body() body: any, @CurrentUser('id') userId: string) {
+  @ApiOperation({ summary: 'Create reservation (optionally for a linked child via forChildUserId)' })
+  create(@Body() body: any, @CurrentUser('id') actorId: string) {
+    const { forChildUserId, ...rest } = body;
     return this.reservationsService.create({
-      ...body,
-      userId,
-      createdBy: userId,
+      ...rest,
+      userId: actorId,
+      createdBy: actorId,
+      forChildUserId: forChildUserId ?? null,
       startTime: new Date(body.startTime),
       endTime: new Date(body.endTime),
     });

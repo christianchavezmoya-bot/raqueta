@@ -142,13 +142,14 @@ export class PlayersController {
   @Post(':id/invite')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Send a match invitation to a player' })
+  @ApiOperation({ summary: 'Send a match invitation (optionally on behalf of a linked child via forChildUserId)' })
   invite(
-    @CurrentUser('id') requesterId: string,
+    @CurrentUser('id') actorId: string,
     @Param('id') recipientUserId: string,
     @Body('message') message?: string,
+    @Body('forChildUserId') forChildUserId?: string,
   ) {
-    return this.invitationsService.sendInvitation(requesterId, recipientUserId, message);
+    return this.invitationsService.sendInvitation(actorId, recipientUserId, message, forChildUserId ?? null);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -161,12 +162,24 @@ export class PlayersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN)
   @Patch(':id/role')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update player role' })
-  updateRole(@Param('id') id: string, @Body('role') role: string) {
-    return this.playersService.updateRole(id, role);
+  @ApiOperation({ summary: 'Update player role — SUPER_ADMIN (any role) or CLUB_ADMIN (staff roles, own club only)' })
+  updateRole(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: string,
+    @CurrentUser('staffClubId') actorStaffClubId: string | undefined,
+    @Param('id') targetUserId: string,
+    @Body('role') role: string,
+  ) {
+    return this.playersService.updateRole(
+      actorId,
+      actorRole,
+      actorStaffClubId ?? null,
+      targetUserId,
+      role,
+    );
   }
 
   @Public()

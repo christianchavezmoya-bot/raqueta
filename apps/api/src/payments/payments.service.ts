@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertCanActForPlayer } from '../common/utils/transact-gate';
 
 @Injectable()
 export class PaymentsService {
@@ -22,6 +23,7 @@ export class PaymentsService {
   async create(data: {
     clubId: string;
     userId: string;
+    actorId: string;
     amount: number;
     currency?: string;
     method: string;
@@ -29,9 +31,36 @@ export class PaymentsService {
     tournamentRegistrationId?: string;
     membershipId?: string;
     notes?: string;
+    forChildUserId?: string | null;
   }) {
+    let { userId } = data;
+    let actedByUserId: string | null = null;
+
+    if (data.forChildUserId) {
+      const childProfile = await this.prisma.playerProfile.findUnique({
+        where: { userId: data.forChildUserId },
+        select: { id: true },
+      });
+      if (!childProfile) throw new NotFoundException('Child player profile not found');
+      await assertCanActForPlayer(data.actorId, childProfile.id, this.prisma);
+      userId = data.forChildUserId;
+      actedByUserId = data.actorId;
+    }
+
     return this.prisma.payment.create({
-      data: { ...data, status: 'PENDING' } as any,
+      data: {
+        clubId: data.clubId,
+        userId,
+        actedByUserId,
+        amount: data.amount,
+        currency: data.currency,
+        method: data.method as any,
+        reservationId: data.reservationId,
+        tournamentRegistrationId: data.tournamentRegistrationId,
+        membershipId: data.membershipId,
+        notes: data.notes,
+        status: 'PENDING',
+      },
       include: { user: { select: { id: true, email: true } }, reservation: true },
     });
   }

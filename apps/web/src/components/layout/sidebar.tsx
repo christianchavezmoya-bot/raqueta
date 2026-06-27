@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Calendar, BookOpen, Users, CreditCard,
   Trophy, BarChart3, Settings, Building2, MapPin, UserCheck,
-  Award, FileText, Bell, LogOut, ChevronRight, History, ShieldCheck,
+  Award, FileText, Bell, LogOut, ChevronRight, History, ShieldCheck, Link2,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useClubStore } from '@/stores/club.store';
@@ -16,6 +16,7 @@ const navItems = [
   { href: '/dashboard/calendar', label: 'Calendario', icon: Calendar },
   { href: '/dashboard/reservations', label: 'Reservas', icon: BookOpen },
   { href: '/dashboard/players', label: 'Jugadores', icon: Users },
+  { href: '/dashboard/players/parent-child-links', label: 'Vínculos P/H', icon: Link2 },
   { href: '/dashboard/memberships', label: 'Membresías', icon: UserCheck },
   { href: '/dashboard/courts', label: 'Canchas', icon: MapPin },
   { href: '/dashboard/instructors', label: 'Instructores', icon: Award },

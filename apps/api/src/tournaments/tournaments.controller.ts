@@ -60,12 +60,14 @@ export class TournamentsController {
   @UseGuards(JwtAuthGuard)
   @Post('tournaments/:id/register')
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register for tournament (optionally for a linked child via forChildUserId)' })
   register(
     @Param('id') id: string,
     @Body('categoryId') categoryId: string,
-    @CurrentUser('id') playerId: string,
+    @Body('forChildUserId') forChildUserId: string | undefined,
+    @CurrentUser('id') actorId: string,
   ) {
-    return this.tournamentsService.register(id, categoryId, playerId);
+    return this.tournamentsService.register(id, categoryId, actorId, forChildUserId ?? null);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
