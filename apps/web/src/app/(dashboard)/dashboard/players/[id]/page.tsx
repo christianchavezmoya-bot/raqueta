@@ -106,6 +106,8 @@ export default function PlayerDetailPage() {
 
   const profile = player.playerProfile;
   const stats = profile?.stats;
+  const sharedStats = profile?.sharedStats;
+  const clubCanSeeStats = profile?.statsVisibility?.shareStatsWithClub !== false;
   const winRate = stats?.matchesPlayed > 0
     ? Math.round((stats.wins / stats.matchesPlayed) * 100)
     : 0;
@@ -203,21 +205,42 @@ export default function PlayerDetailPage() {
             <Activity className="w-4 h-4 text-brand-600" />
             <h3 className="font-semibold text-gray-900">Estadisticas</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { label: 'Partidos jugados', value: stats?.matchesPlayed ?? 0 },
-              { label: 'Victorias', value: stats?.wins ?? 0 },
-              { label: 'Derrotas', value: stats?.losses ?? 0 },
-              { label: '% de victorias', value: `${winRate}%` },
-              { label: 'Puntos ranking', value: stats?.rankingPoints ?? 0 },
-              { label: 'Torneos', value: stats?.tournamentsPlayed ?? 0 },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-gray-900">{value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+          {!clubCanSeeStats ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-sm text-gray-500">
+              Este jugador no comparte estadísticas detalladas con el staff del club.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: 'Partidos jugados', value: stats?.matchesPlayed ?? 0 },
+                  { label: 'Victorias', value: stats?.wins ?? 0 },
+                  { label: 'Derrotas', value: stats?.losses ?? 0 },
+                  { label: '% de victorias', value: `${winRate}%` },
+                  { label: 'Puntos ranking', value: stats?.rankingPoints ?? 0 },
+                  { label: 'Torneos', value: stats?.tournamentsPlayed ?? 0 },
+                ].map(({ label, value }) => (
+                  <div key={label} className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-gray-900">{value}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              {sharedStats?.bySource?.length > 0 && (
+                <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-sm font-semibold text-gray-900">Rendimiento por fuente</p>
+                  <div className="mt-3 space-y-2 text-sm text-gray-600">
+                    {sharedStats.bySource.map((entry: any) => (
+                      <div key={entry.source} className="flex items-center justify-between">
+                        <span>{entry.source}</span>
+                        <span>{entry.wins}W / {entry.losses}L · {entry.matchesPlayed} partidos</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="card">

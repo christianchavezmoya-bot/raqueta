@@ -29,6 +29,11 @@ export default function ProfileScreen() {
     queryFn: async () => { const { data } = await api.get('/users/me/reservations?limit=5'); return data; },
   });
 
+  const { data: myStats } = useQuery({
+    queryKey: ['my-stats-profile'],
+    queryFn: async () => { const { data } = await api.get('/players/me/stats'); return data; },
+  });
+
   const enable2FA = useMutation({
     mutationFn: () => api.post('/auth/2fa/enable'),
     onSuccess: () => { refetchMe(); Alert.alert('2FA activado', 'Se envió un código a tu email para confirmar. En el próximo login, necesitarás el código.'); },
@@ -61,6 +66,15 @@ export default function ProfileScreen() {
     mutationFn: () => api.delete('/players/me/run-link'),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['me-profile'] }); Alert.alert('RUN desvinculado'); },
     onError: (err: any) => Alert.alert('No se pudo desvincular', err.response?.data?.message ?? 'Error'),
+  });
+
+  const updateVisibility = useMutation({
+    mutationFn: (payload: any) => api.patch('/players/me/availability/settings', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo actualizar la privacidad'),
   });
 
   const profile = me?.playerProfile;
@@ -163,6 +177,22 @@ export default function ProfileScreen() {
         ))}
       </View>
 
+      {myStats?.statsCard && (
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Mi tarjeta pública</Text>
+          <View style={s.publicCard}>
+            <Text style={s.publicCardTitle}>{myStats.statsCard.title}</Text>
+            <Text style={s.publicCardSub}>
+              {myStats.statsCard.summary.matchesPlayed} partidos · {myStats.statsCard.summary.wins} victorias · {myStats.statsCard.summary.rankingPoints} puntos
+            </Text>
+            <TouchableOpacity style={s.publicCardBtn} onPress={() => router.push(`/player/${me?.id}` as any)}>
+              <Ionicons name="open-outline" size={16} color="#16a34a" />
+              <Text style={s.publicCardBtnText}>Abrir vista pública y compartir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Upcoming reservations */}
       <View style={s.section}>
         <Text style={s.sectionTitle}>Mis reservas recientes</Text>
@@ -261,6 +291,43 @@ export default function ProfileScreen() {
         ))}
       </View>
 
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Privacidad</Text>
+        {[
+          {
+            key: 'publicVisibility',
+            label: 'Perfil público',
+            value: !!profile?.publicVisibility,
+            hint: 'Permite que otros jugadores encuentren tu perfil público.',
+          },
+          {
+            key: 'shareStatsWithClub',
+            label: 'Compartir stats con mi club',
+            value: !!profile?.shareStatsWithClub,
+            hint: 'Controla las estadísticas detalladas visibles para staff del club.',
+          },
+          {
+            key: 'shareStatsWithPlayers',
+            label: 'Compartir stats con jugadores',
+            value: !!profile?.shareStatsWithPlayers,
+            hint: 'Controla la tarjeta pública y las estadísticas visibles para otros jugadores.',
+          },
+        ].map(item => (
+          <View key={item.key} style={s.privacyItem}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.privacyLabel}>{item.label}</Text>
+              <Text style={s.privacyHint}>{item.hint}</Text>
+            </View>
+            <Switch
+              value={item.value}
+              onValueChange={next => updateVisibility.mutate({ [item.key]: next })}
+              trackColor={{ false: '#d1d5db', true: '#16a34a' }}
+              disabled={updateVisibility.isPending}
+            />
+          </View>
+        ))}
+      </View>
+
       {/* 2FA section */}
       <View style={s.section}>
         <Text style={s.sectionTitle}>Seguridad</Text>
@@ -347,6 +414,14 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 12, color: '#6b7280', marginTop: 3 },
   section: { margin: 16, marginTop: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
+  publicCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
+  publicCardTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  publicCardSub: { fontSize: 13, color: '#6b7280', marginTop: 6 },
+  publicCardBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, alignSelf: 'flex-start' },
+  publicCardBtnText: { fontSize: 13, fontWeight: '700', color: '#16a34a' },
+  privacyItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
+  privacyLabel: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  privacyHint: { fontSize: 12, color: '#6b7280', marginTop: 4, lineHeight: 18 },
   itemCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
   itemIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#f0fdf4', justifyContent: 'center', alignItems: 'center' },
   itemInfo: { flex: 1 },

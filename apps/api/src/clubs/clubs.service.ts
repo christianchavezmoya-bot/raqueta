@@ -3,9 +3,11 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
 import { EmailService } from '../common/email/email.service';
@@ -18,10 +20,13 @@ const TRIAL_DAYS = 14;
 
 @Injectable()
 export class ClubsService {
+  private readonly logger = new Logger(ClubsService.name);
+
   constructor(
     private prisma: PrismaService,
     private media: MediaService,
     private email: EmailService,
+    private config: ConfigService,
   ) {}
 
   async findAll(page = 1, limit = 20) {
@@ -52,7 +57,11 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return { ...this.withResolvedAccent(club), trialStatus: this.computeTrialStatus(club) };
+    return {
+      ...this.withResolvedAccent(club),
+      trialStatus: this.computeTrialStatus(club),
+      publicStatsCard: await this.buildPublicStatsCard(club.id),
+    };
   }
 
   async findBySlug(slug: string) {
@@ -67,7 +76,11 @@ export class ClubsService {
       },
     });
     if (!club) throw new NotFoundException('Club not found');
-    return { ...this.withResolvedAccent(club), trialStatus: this.computeTrialStatus(club) };
+    return {
+      ...this.withResolvedAccent(club),
+      trialStatus: this.computeTrialStatus(club),
+      publicStatsCard: await this.buildPublicStatsCard(club.id),
+    };
   }
 
   async create(dto: CreateClubDto, ownerUserId: string) {
@@ -181,17 +194,46 @@ export class ClubsService {
   async updateProfile(clubId: string, dto: UpdateClubProfileDto, actor: ActingUser) {
     await this.ensureExists(clubId);
     await assertClubScope(actor, clubId, this.prisma);
+    if (
+      (dto.latitude !== undefined && dto.longitude === undefined)
+      || (dto.latitude === undefined && dto.longitude !== undefined)
+    ) {
+      throw new BadRequestException('Latitude and longitude must be provided together');
+    }
+
+    const existingProfile = await this.prisma.clubProfile.findUnique({ where: { clubId } });
     const data = {
       ...dto,
       ...(Object.prototype.hasOwnProperty.call(dto, 'accentColor')
         ? { accentColor: normalizeAccentColor(dto.accentColor) }
         : {}),
     };
-    return this.prisma.clubProfile.upsert({
+
+    if (
+      dto.latitude === undefined
+      && dto.longitude === undefined
+      && this.didAddressFieldsChange(dto)
+    ) {
+      const mergedProfile = {
+        ...existingProfile,
+        ...data,
+      };
+      const geocoded = await this.tryGeocodeClubProfile(mergedProfile);
+      data.latitude = geocoded?.latitude ?? null;
+      data.longitude = geocoded?.longitude ?? null;
+    }
+
+    const profile = await this.prisma.clubProfile.upsert({
       where: { clubId },
       update: data,
       create: { clubId, ...data },
     });
+    return {
+      ...profile,
+      resolvedAccentColor: resolveAccentColor(profile.accentColor),
+      hasMapLocation: profile.latitude !== null && profile.longitude !== null,
+      mapStatus: this.getMapStatus(profile as any),
+    };
   }
 
   async uploadLogo(clubId: string, file: Express.Multer.File, actor: ActingUser) {
@@ -315,7 +357,73 @@ export class ClubsService {
       profile: {
         ...club.profile,
         resolvedAccentColor: resolveAccentColor(club.profile.accentColor),
+        hasMapLocation: club.profile.latitude !== null && club.profile.longitude !== null,
+        mapStatus: this.getMapStatus(club.profile),
       },
+    };
+  }
+
+  private getMapStatus(profile: Record<string, any>) {
+    if (profile.latitude !== null && profile.longitude !== null) return 'READY';
+    const hasAddress = [profile.address, profile.city, profile.region, profile.country].some(Boolean);
+    return hasAddress ? 'MISSING_COORDINATES' : 'NO_ADDRESS';
+  }
+
+  private didAddressFieldsChange(dto: UpdateClubProfileDto) {
+    return ['address', 'city', 'region', 'country'].some(key => Object.prototype.hasOwnProperty.call(dto, key));
+  }
+
+  private async tryGeocodeClubProfile(profile: Partial<UpdateClubProfileDto> & { clubId?: string }) {
+    const apiKey = this.config.get<string>('GOOGLE_GEOCODING_API_KEY');
+    if (!apiKey) {
+      this.logger.warn(`GOOGLE_GEOCODING_API_KEY is missing; skipping automatic geocoding for club ${profile.clubId ?? 'unknown'}`);
+      return null;
+    }
+
+    const address = [profile.address, profile.city, profile.region, profile.country]
+      .filter(Boolean)
+      .join(', ')
+      .trim();
+    if (!address) return null;
+
+    try {
+      const params = new URLSearchParams({ address, key: apiKey });
+      const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+      if (!response.ok) {
+        this.logger.warn(`Geocoding request failed with ${response.status} for club ${profile.clubId ?? 'unknown'}`);
+        return null;
+      }
+
+      const payload: any = await response.json();
+      if (payload.status !== 'OK' || !payload.results?.length) {
+        this.logger.warn(`Geocoding returned ${payload.status} for club ${profile.clubId ?? 'unknown'}`);
+        return null;
+      }
+
+      const location = payload.results[0]?.geometry?.location;
+      if (!location) return null;
+      return { latitude: location.lat, longitude: location.lng };
+    } catch (error) {
+      this.logger.warn(`Automatic geocoding failed for club ${profile.clubId ?? 'unknown'}: ${String(error)}`);
+      return null;
+    }
+  }
+
+  private async buildPublicStatsCard(clubId: string) {
+    const [activeMembers, activeCourts, instructors, completedReservations, tournaments] = await Promise.all([
+      this.prisma.membership.count({ where: { clubId, status: 'ACTIVE' } }),
+      this.prisma.court.count({ where: { clubId, active: true } }),
+      this.prisma.instructor.count({ where: { clubId, active: true } }),
+      this.prisma.reservation.count({ where: { clubId, status: 'COMPLETED' } }),
+      this.prisma.tournament.count({ where: { clubId } }),
+    ]);
+
+    return {
+      activeMembers,
+      activeCourts,
+      activeInstructors: instructors,
+      completedReservations,
+      tournamentsHosted: tournaments,
     };
   }
 

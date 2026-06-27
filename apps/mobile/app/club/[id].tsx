@@ -164,6 +164,25 @@ export default function ClubDetailScreen() {
         {/* Info tab */}
         {activeTab === 'info' && (
           <View style={s.section}>
+            {club.publicStatsCard && (
+              <View style={s.infoCard}>
+                <Text style={s.infoLabel}>Estadísticas públicas</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  {[
+                    { label: 'Socios', value: club.publicStatsCard.activeMembers },
+                    { label: 'Canchas', value: club.publicStatsCard.activeCourts },
+                    { label: 'Reservas', value: club.publicStatsCard.completedReservations },
+                    { label: 'Torneos', value: club.publicStatsCard.tournamentsHosted },
+                  ].map((item: any) => (
+                    <View key={item.label} style={{ width: '47%', backgroundColor: '#f8fafc', borderRadius: 12, padding: 12 }}>
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827' }}>{item.value}</Text>
+                      <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>{item.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {club.profile?.description && (
               <View style={s.infoCard}>
                 <Text style={s.infoLabel}>Descripción</Text>

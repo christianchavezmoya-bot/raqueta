@@ -13,14 +13,24 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.raqueta"
+      "bundleIdentifier": "app.raqueta",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Usamos tu ubicación solo mientras activas Disponible para partidos y para encontrar jugadores cercanos.",
+        "NSLocationTemporaryUsageDescriptionDictionary": {
+          "player-matchmaking": "Tu ubicación se usa temporalmente para mostrar rivales dentro de 1 km mientras eliges jugar."
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#16a34a"
       },
-      "package": "app.raqueta"
+      "package": "app.raqueta",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

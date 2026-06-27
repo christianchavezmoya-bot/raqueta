@@ -14,6 +14,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { LinkRunDto } from './dto/link-run.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 
 @ApiTags('Players')
 @Controller('players')
@@ -23,7 +24,8 @@ export class PlayersController {
     private readonly invitationsService: InvitationsService,
   ) {}
 
-  @Public()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER, Role.RECEPTION)
   @Get()
   @ApiOperation({ summary: 'List players (admin use)' })
   @ApiQuery({ name: 'page', required: false })
@@ -45,6 +47,9 @@ export class PlayersController {
   @ApiQuery({ name: 'level', required: false })
   @ApiQuery({ name: 'weekdays', required: false, type: Boolean })
   @ApiQuery({ name: 'weekends', required: false, type: Boolean })
+  @ApiQuery({ name: 'radiusKm', required: false, type: Number })
+  @ApiQuery({ name: 'latitude', required: false, type: Number })
+  @ApiQuery({ name: 'longitude', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   searchAvailable(
@@ -53,6 +58,9 @@ export class PlayersController {
     @Query('level') level?: string,
     @Query('weekdays') weekdays?: string,
     @Query('weekends') weekends?: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('latitude') latitude?: string,
+    @Query('longitude') longitude?: string,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
   ) {
@@ -61,6 +69,9 @@ export class PlayersController {
       level,
       availableWeekdays: weekdays === 'true',
       availableWeekends: weekends === 'true',
+      radiusKm: radiusKm ? +radiusKm : undefined,
+      latitude: latitude ? +latitude : undefined,
+      longitude: longitude ? +longitude : undefined,
       page: +page,
       limit: +limit,
     });
@@ -70,9 +81,9 @@ export class PlayersController {
   @Patch('me/availability')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Quick-toggle availableForMatch (no body required; flips the flag)' })
-  toggleAvailability(@CurrentUser('id') userId: string) {
-    return this.playersService.toggleAvailability(userId);
+  @ApiOperation({ summary: 'Toggle or explicitly set availableForMatch, optionally sending a live location snapshot' })
+  toggleAvailability(@CurrentUser('id') userId: string, @Body() body: UpdateAvailabilityDto) {
+    return this.playersService.toggleAvailability(userId, body ?? {});
   }
 
   @UseGuards(JwtAuthGuard)
@@ -158,6 +169,13 @@ export class PlayersController {
   }
 
   @Public()
+  @Get(':id/head-to-head/:opponentId')
+  @ApiOperation({ summary: 'Get head-to-head record for a player against a specific opponent' })
+  getHeadToHead(@Param('id') id: string, @Param('opponentId') opponentId: string) {
+    return this.playersService.getHeadToHead(id, opponentId);
+  }
+
+  @Public()
   @Get(':id/public')
   @ApiOperation({ summary: 'Get public player profile' })
   getPublicProfile(@Param('id') id: string) {
@@ -180,6 +198,14 @@ export class PlayersController {
   @ApiOperation({ summary: 'Update my profile' })
   updateMyProfile(@CurrentUser('id') userId: string, @Body() body: any) {
     return this.playersService.updateMyProfile(userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/stats')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get my full player statistics' })
+  getMyStats(@CurrentUser('id') userId: string) {
+    return this.playersService.getMyStats(userId);
   }
 
   @Public()

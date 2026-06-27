@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { MapPin, CalendarDays, Users, Clock3, Trophy } from 'lucide-react';
+import { CalendarDays, Clock3, Download, MapPin, Share2, Trophy, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { getContrastText, resolveClubAccent, withAlpha } from '@/lib/club-accent';
@@ -12,6 +12,7 @@ import { usePublicClubBySlug } from '@/hooks/use-club';
 export default function ClubPublicPageClient({ slug }: { slug: string }) {
   const [selectedCourt, setSelectedCourt] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const statsCardRef = useRef<HTMLDivElement | null>(null);
   const { data: club, isLoading } = usePublicClubBySlug(slug);
 
   const accentColor = resolveClubAccent(club?.profile?.resolvedAccentColor ?? club?.profile?.accentColor);
@@ -46,6 +47,34 @@ export default function ClubPublicPageClient({ slug }: { slug: string }) {
 
   if (isLoading) return <div className="mx-auto max-w-6xl px-6 py-16">Cargando club...</div>;
   if (!club) return <div className="mx-auto max-w-6xl px-6 py-16">Club no encontrado.</div>;
+
+  const exportStatsCard = async (mode: 'download' | 'share') => {
+    if (!statsCardRef.current) return;
+    const html2canvas = (await import('html2canvas')).default;
+    const canvas = await html2canvas(statsCardRef.current, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+
+    if (mode === 'share' && navigator.share) {
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      const file = new File([blob], `${club.slug}-stats.png`, { type: 'image/png' });
+      try {
+        await navigator.share({ files: [file], title: `${club.name} · Estadísticas` });
+        return;
+      } catch {
+        toast.error('No se pudo abrir el selector para compartir');
+        return;
+      }
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = dataUrl;
+    anchor.download = `${club.slug}-stats.png`;
+    anchor.click();
+  };
 
   const courts = club.courts ?? [];
   const instructors = club.instructors ?? [];
@@ -96,6 +125,39 @@ export default function ClubPublicPageClient({ slug }: { slug: string }) {
 
       <section className="mx-auto grid max-w-6xl gap-6 px-6 pb-16 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="space-y-6">
+          <div ref={statsCardRef} className="rounded-[28px] border border-gray-200 bg-white p-8 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Estadísticas públicas</p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-900">Resumen del club</h2>
+              </div>
+              <div className="flex gap-2 print:hidden">
+                <button type="button" onClick={() => exportStatsCard('download')} className="inline-flex items-center rounded-full border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700">
+                  <Download className="mr-2 h-4 w-4" />
+                  PNG
+                </button>
+                <button type="button" onClick={() => exportStatsCard('share')} className="inline-flex items-center rounded-full px-3 py-2 text-sm font-semibold" style={{ backgroundColor: accentColor, color: accentText }}>
+                  <Share2 className="mr-2 h-4 w-4" />
+                  Compartir
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {[
+                { label: 'Socios activos', value: club.publicStatsCard?.activeMembers ?? 0 },
+                { label: 'Canchas activas', value: club.publicStatsCard?.activeCourts ?? 0 },
+                { label: 'Reservas jugadas', value: club.publicStatsCard?.completedReservations ?? 0 },
+                { label: 'Torneos organizados', value: club.publicStatsCard?.tournamentsHosted ?? 0 },
+              ].map(item => (
+                <div key={item.label} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-gray-900">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-[28px] border border-gray-200 bg-white p-8 shadow-sm">
             <div className="flex items-center gap-3">
               <Users className="h-5 w-5" style={{ color: accentColor }} />

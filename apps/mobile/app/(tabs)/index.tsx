@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import * as Location from 'expo-location';
 import { useAuthStore } from '../../src/stores/auth.store';
 import api from '../../src/lib/api';
 
@@ -32,7 +33,7 @@ export default function HomeScreen() {
   });
 
   const toggleAvail = useMutation({
-    mutationFn: () => api.patch('/players/me/availability'),
+    mutationFn: (payload: any) => api.patch('/players/me/availability', payload),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['me'] }); qc.invalidateQueries({ queryKey: ['me-profile'] }); },
     onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo actualizar'),
   });
@@ -42,6 +43,43 @@ export default function HomeScreen() {
   const nextReservation = myReservations?.data?.[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';
+
+  const handleAvailabilityPress = () => {
+    if (toggleAvail.isPending) return;
+
+    if (isAvailable) {
+      toggleAvail.mutate({ availableForMatch: false });
+      return;
+    }
+
+    Alert.alert(
+      'Ubicación temporal',
+      'Tu ubicación se usará solo mientras actives "Disponible" para buscar rivales cercanos. Al apagarlo se elimina de inmediato.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Continuar',
+          onPress: async () => {
+            const permission = await Location.requestForegroundPermissionsAsync();
+            if (permission.status !== 'granted') {
+              Alert.alert('Permiso requerido', 'Necesitamos tu ubicación actual para mostrarte solo mientras estés disponible.');
+              return;
+            }
+
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+
+            toggleAvail.mutate({
+              availableForMatch: true,
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+            });
+          },
+        },
+      ],
+    );
+  };
 
   const quickActions = [
     { label: 'Reservar cancha', icon: 'tennisball', color: '#16a34a', onPress: () => router.push('/(tabs)/explore') },
@@ -61,7 +99,7 @@ export default function HomeScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           {/* Availability quick-toggle */}
           <TouchableOpacity
-            onPress={() => toggleAvail.mutate()}
+            onPress={handleAvailabilityPress}
             style={[s.availBtn, isAvailable && s.availBtnOn]}
             disabled={toggleAvail.isPending}
           >
