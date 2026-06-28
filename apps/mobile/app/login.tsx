@@ -5,7 +5,9 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../src/stores/auth.store';
+import api from '../src/lib/api';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -16,21 +18,89 @@ export default function LoginScreen() {
   const [otpCode, setOtpCode] = useState('');
   const [step, setStep] = useState<'credentials' | '2fa'>('credentials');
   const [loading, setLoading] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [probeLoading, setProbeLoading] = useState(false);
+  const [debugLines, setDebugLines] = useState<string[]>([
+    `API: ${api.defaults.baseURL ?? 'N/A'}`,
+    'Estado: sin intentos',
+  ]);
+
+  const setDebug = (lines: string[]) => {
+    setDebugLines([
+      `API: ${api.defaults.baseURL ?? 'N/A'}`,
+      ...lines,
+    ]);
+  };
+
+  const describeError = (err: any) => {
+    const responseMessage = Array.isArray(err?.response?.data?.message)
+      ? err.response.data.message.join(' | ')
+      : err?.response?.data?.message;
+
+    return [
+      `Hora: ${new Date().toLocaleTimeString()}`,
+      `HTTP: ${err?.response?.status ?? 'sin respuesta'}`,
+      `Code: ${err?.code ?? 'N/A'}`,
+      `Axios: ${err?.message ?? 'N/A'}`,
+      `Server: ${responseMessage ?? 'N/A'}`,
+    ];
+  };
 
   const handleLogin = async () => {
     if (!email || !password) return;
     setLoading(true);
+    setDebug([
+      `Hora: ${new Date().toLocaleTimeString()}`,
+      `Intento login: ${email}`,
+      'Estado: enviando credenciales...',
+    ]);
     try {
       const { twoFactorRequired } = await login(email, password);
+      setDebug([
+        `Hora: ${new Date().toLocaleTimeString()}`,
+        `Login OK: ${email}`,
+        `2FA: ${twoFactorRequired ? 'requerido' : 'no'}`,
+      ]);
       if (twoFactorRequired) {
         setStep('2fa');
       } else {
         router.replace('/(tabs)');
       }
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message ?? 'Credenciales inválidas');
+      const serverMessage = err.response?.data?.message;
+      setDebug(describeError(err));
+      if (serverMessage) {
+        Alert.alert('Error', serverMessage);
+      } else {
+        Alert.alert(
+          'Sin conexión con el servidor',
+          'La app no pudo llegar a la API local. Verifica que el iPhone y esta Mac estén en la misma red Wi-Fi y vuelve a abrir la app.',
+        );
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProbeApi = async () => {
+    setProbeLoading(true);
+    setDebug([
+      `Hora: ${new Date().toLocaleTimeString()}`,
+      'Probe API: ejecutando...',
+    ]);
+    try {
+      const { data, status } = await api.get('/clubs?limit=1');
+      setDebug([
+        `Hora: ${new Date().toLocaleTimeString()}`,
+        `Probe API OK`,
+        `HTTP: ${status}`,
+        `Clubs devueltos: ${data?.data?.length ?? 0}`,
+      ]);
+    } catch (err: any) {
+      setDebug(describeError(err));
+      Alert.alert('Probe API falló', err?.response?.data?.message ?? err?.message ?? 'Error desconocido');
+    } finally {
+      setProbeLoading(false);
     }
   };
 
@@ -118,14 +188,29 @@ export default function LoginScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Contraseña</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#9ca3af"
-              secureTextEntry
-            />
+            <View style={styles.passwordWrap}>
+              <TextInput
+                style={styles.passwordInput}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor="#9ca3af"
+                secureTextEntry={!passwordVisible}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                onPress={() => setPasswordVisible(v => !v)}
+                style={styles.eyeButton}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -134,6 +219,16 @@ export default function LoginScreen() {
             disabled={loading}
           >
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ingresar</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryButton, probeLoading && styles.buttonDisabled]}
+            onPress={handleProbeApi}
+            disabled={probeLoading}
+          >
+            {probeLoading
+              ? <ActivityIndicator color="#1b4a86" />
+              : <Text style={styles.secondaryButtonText}>Probar conexión API</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push('/register')} style={styles.registerLink}>
@@ -145,6 +240,13 @@ export default function LoginScreen() {
           <Text style={styles.demoTitle}>Cuentas de prueba:</Text>
           <Text style={styles.demoText}>juan.perez@gmail.com / Player123!</Text>
           <Text style={styles.demoText}>carlos.silva@gmail.com / Player123!</Text>
+        </View>
+
+        <View style={styles.debugCard}>
+          <Text style={styles.debugTitle}>Debug login</Text>
+          {debugLines.map((line, index) => (
+            <Text key={`${index}-${line}`} style={styles.debugText}>{line}</Text>
+          ))}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -172,13 +274,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 15, color: '#111827', backgroundColor: '#fff',
   },
+  passwordWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111827',
+  },
+  eyeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
   otpInput: { textAlign: 'center', fontSize: 28, fontWeight: '800', letterSpacing: 10 },
   button: {
     backgroundColor: '#1b4a86', borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 8,
   },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: '#1b4a86',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 10,
+    backgroundColor: '#eff6ff',
+  },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  secondaryButtonText: { color: '#1b4a86', fontSize: 15, fontWeight: '700' },
   registerLink: { alignItems: 'center', marginTop: 20 },
   registerText: { fontSize: 14, color: '#6b7280' },
   registerTextBold: { fontWeight: '700', color: '#1b4a86' },
@@ -188,4 +319,12 @@ const styles = StyleSheet.create({
   },
   demoTitle: { fontSize: 13, fontWeight: '600', color: '#fff', marginBottom: 6 },
   demoText: { fontSize: 12, color: '#93b9e8', marginBottom: 2 },
+  debugCard: {
+    marginTop: 16,
+    backgroundColor: 'rgba(7, 15, 28, 0.48)',
+    borderRadius: 12,
+    padding: 16,
+  },
+  debugTitle: { fontSize: 13, fontWeight: '700', color: '#fff', marginBottom: 8 },
+  debugText: { fontSize: 12, color: '#cbd5e1', marginBottom: 4 },
 });
