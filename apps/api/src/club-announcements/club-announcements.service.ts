@@ -110,6 +110,111 @@ export class ClubAnnouncementsService {
   }
 
   /**
+   * Player-facing feed of the most recent announcement per club the player
+   * has favorited. Used by the mobile Home screen's swipeable announcement
+   * carousel — one card per favorited club.
+   *
+   * Category-mute filtering uses EXACTLY the same logic as `resolveAudience`
+   * above: a player without a preference row keeps every category (defaults
+   * to TRUE), and only an explicit mute for that announcement's category
+   * drops the card.
+   *
+   * Returns one entry per favorited club (most-recent announcement only),
+   * ordered by the announcement's createdAt desc so the freshest news is
+   * at the front of the carousel. Clubs with no announcements yet are
+   * omitted — the mobile UI treats that as "no card for this club" rather
+   * than rendering a placeholder.
+   */
+  async feedForFavorites(userId: string) {
+    const favorites = await this.prisma.clubFavorite.findMany({
+      where: { userId },
+      select: { clubId: true },
+    });
+
+    if (favorites.length === 0) return [];
+
+    const clubIds = favorites.map(f => f.clubId);
+
+    const preferences = await this.prisma.playerNotificationPreference.findUnique({
+      where: { userId },
+      select: {
+        notifyEvents: true,
+        notifyOffers: true,
+        notifyMembershipOffers: true,
+        notifyMatchFinding: true,
+      },
+    });
+
+    // No preference row → keep every category (defaults are TRUE).
+    const isMuted = (category: string) => {
+      if (!preferences) return false;
+      switch (category) {
+        case 'EVENTS': return !preferences.notifyEvents;
+        case 'OFFERS': return !preferences.notifyOffers;
+        case 'MEMBERSHIP_OFFERS': return !preferences.notifyMembershipOffers;
+        case 'MATCH_FINDING': return !preferences.notifyMatchFinding;
+        default: return false;
+      }
+    };
+
+    // Pull the most-recent announcement per club. Group-by-clubId + sort
+    // by createdAt desc, then take the first per club in JS — this avoids
+    // needing a window function and keeps the query portable.
+    const recent = await this.prisma.clubAnnouncement.findMany({
+      where: { clubId: { in: clubIds } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        club: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            profile: { select: { logoUrl: true, accentColor: true } },
+          },
+        },
+      },
+    });
+
+    const seen = new Set<string>();
+    const feed: Array<{
+      clubId: string;
+      clubName: string;
+      clubSlug: string;
+      clubLogoUrl: string | null;
+      clubAccentColor: string | null;
+      announcement: {
+        id: string;
+        title: string;
+        body: string;
+        category: string;
+        createdAt: Date;
+      };
+    }> = [];
+
+    for (const a of recent) {
+      if (seen.has(a.clubId)) continue;
+      seen.add(a.clubId);
+      if (isMuted(a.category)) continue;
+      feed.push({
+        clubId: a.clubId,
+        clubName: a.club.name,
+        clubSlug: a.club.slug,
+        clubLogoUrl: a.club.profile?.logoUrl ?? null,
+        clubAccentColor: a.club.profile?.accentColor ?? null,
+        announcement: {
+          id: a.id,
+          title: a.title,
+          body: a.body,
+          category: a.category,
+          createdAt: a.createdAt,
+        },
+      });
+    }
+
+    return feed;
+  }
+
+  /**
    * Resolves the final delivery list for a given announcement.
    *
    * Pipeline:

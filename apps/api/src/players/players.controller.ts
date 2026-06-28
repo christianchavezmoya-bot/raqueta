@@ -10,6 +10,7 @@ import { PlayersService } from './players.service';
 import { InvitationsService } from '../invitations/invitations.service';
 import { FavoritesService } from '../favorites/favorites.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ClubAnnouncementsService } from '../club-announcements/club-announcements.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -27,6 +28,7 @@ export class PlayersController {
     private readonly invitationsService: InvitationsService,
     private readonly favoritesService: FavoritesService,
     private readonly notificationsService: NotificationsService,
+    private readonly clubAnnouncementsService: ClubAnnouncementsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -151,6 +153,24 @@ export class PlayersController {
   })
   listMyFavorites(@CurrentUser('id') userId: string) {
     return this.favoritesService.listForPlayer(userId);
+  }
+
+  /**
+   * Mobile-Home announcement carousel source. Returns the most-recent
+   * announcement for each club the player has favorited, already filtered
+   * through PlayerNotificationPreference so a muted category won't surface.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('me/favorite-announcements')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Most-recent announcement per favorited club, category-mute aware. ' +
+      'Drives the mobile Home carousel. One entry per favorited club; ' +
+      'clubs with no announcements or a muted category are omitted.',
+  })
+  listMyFavoriteAnnouncements(@CurrentUser('id') userId: string) {
+    return this.clubAnnouncementsService.feedForFavorites(userId);
   }
 
   @UseGuards(JwtAuthGuard)

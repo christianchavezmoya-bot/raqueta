@@ -241,7 +241,41 @@ export default function ProfileScreen() {
       <View style={s.section}>
         <Text style={s.sectionTitle}>Mis membresías</Text>
         {memberships.length === 0 ? (
-          <Text style={s.emptyText}>Sin membresías activas o históricas visibles.</Text>
+          <View style={s.noClubCard}>
+            <View style={s.noClubIconWrap}>
+              <Ionicons name="business-outline" size={26} color="#1b4a86" />
+            </View>
+            <Text style={s.noClubTitle}>Aún no eres parte de un club</Text>
+            <Text style={s.noClubSub}>
+              Explora clubes, sigue los que te interesan o gestiona cómo te contactamos.
+            </Text>
+            <View style={s.noClubActions}>
+              <TouchableOpacity
+                style={s.noClubPrimary}
+                onPress={() => router.push('/(tabs)/explore' as any)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="search" size={16} color="#fff" />
+                <Text style={s.noClubPrimaryText}>Explorar clubes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.noClubSecondary}
+                onPress={() => router.push('/favorites' as any)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="heart-outline" size={16} color="#1b4a86" />
+                <Text style={s.noClubSecondaryText}>Mis favoritos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.noClubSecondary}
+                onPress={() => router.push('/notifications-settings' as any)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="options-outline" size={16} color="#1b4a86" />
+                <Text style={s.noClubSecondaryText}>Notificaciones</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         ) : memberships.map((membership: any) => (
           <View key={membership.id} style={s.membershipCard}>
             <View style={{ flex: 1 }}>
@@ -620,4 +654,31 @@ const s = StyleSheet.create({
   membershipBadgeTextActive: { color: '#166534' },
   membershipBadgeTextInactive: { color: '#4b5563' },
   requestStatus: { fontSize: 12, fontWeight: '700', color: '#6b7280' },
+  /* No-club-yet card */
+  noClubCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 18,
+    alignItems: 'flex-start', gap: 10,
+    borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'dashed',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+  },
+  noClubIconWrap: {
+    width: 48, height: 48, borderRadius: 14, backgroundColor: '#eff6ff',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  noClubTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  noClubSub: { fontSize: 13, color: '#6b7280', lineHeight: 19 },
+  noClubActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  noClubPrimary: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#1b4a86', paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 10,
+  },
+  noClubPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  noClubSecondary: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 10,
+  },
+  noClubSecondaryText: { color: '#1b4a86', fontSize: 13, fontWeight: '700' },
 });

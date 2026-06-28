@@ -93,6 +93,41 @@ export function useMyNotificationPreferences() {
   });
 }
 
+/**
+ * One entry per favorited club with its most-recent announcement. Used by
+ * the mobile Home screen carousel. Category-mute filtering already happens
+ * server-side, so an entry that comes back here is by definition not muted.
+ */
+export interface FavoriteAnnouncementFeedItem {
+  clubId: string;
+  clubName: string;
+  clubSlug: string;
+  clubLogoUrl: string | null;
+  clubAccentColor: string | null;
+  announcement: {
+    id: string;
+    title: string;
+    body: string;
+    category: string;
+    createdAt: string;
+  };
+}
+
+export function useMyFavoriteAnnouncementFeed(enabled = true) {
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  return useQuery({
+    queryKey: ['my-favorite-announcements'],
+    queryFn: async () => {
+      const { data } = await api.get<FavoriteAnnouncementFeedItem[]>(
+        '/players/me/favorite-announcements',
+      );
+      return data;
+    },
+    enabled: enabled && isAuthenticated,
+    staleTime: 30_000,
+  });
+}
+
 export function useUpdateNotificationPreferences() {
   const queryClient = useQueryClient();
   return useMutation({
