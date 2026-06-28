@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { AdminService } from './admin.service';
@@ -52,5 +53,28 @@ export class AdminController {
   @ApiOperation({ summary: 'Platform-wide aggregate statistics' })
   getPlatformStats() {
     return this.adminService.getPlatformStats();
+  }
+
+  // ─── PLATFORM SETTINGS ───────────────────────────────────────────────────────
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get all platform settings (SMTP_PASS masked)' })
+  getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Upsert platform settings; blank/masked SMTP_PASS is ignored' })
+  upsertSettings(
+    @Body() body: { settings: Array<{ key: string; value: string }> },
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.upsertSettings(body.settings, actorId);
+  }
+
+  @Post('settings/test-smtp')
+  @ApiOperation({ summary: 'Send a test email to verify current SMTP settings' })
+  testSmtp(@Body() body: { to: string }) {
+    return this.adminService.testSmtp(body.to);
   }
 }

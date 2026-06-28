@@ -1,9 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService, MASKED_PLACEHOLDER } from '../common/email/email.service';
+
+const SENSITIVE_KEYS = new Set(['SMTP_PASS']);
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+  ) {}
 
   // ─── CLUBS ───────────────────────────────────────────────────────────────────
 
@@ -192,6 +198,57 @@ export class AdminService {
         newLast30d: newPlayersLast30,
       },
     };
+  }
+
+  // ─── PLATFORM SETTINGS ───────────────────────────────────────────────────────
+
+  async getSettings() {
+    const rows = await this.prisma.platformSetting.findMany({ orderBy: { key: 'asc' } });
+    return rows.map(r => ({
+      key: r.key,
+      value: SENSITIVE_KEYS.has(r.key) && r.value ? MASKED_PLACEHOLDER : r.value,
+      updatedAt: r.updatedAt,
+    }));
+  }
+
+  async upsertSettings(entries: Array<{ key: string; value: string }>, actorUserId: string) {
+    for (const { key, value } of entries) {
+      // Never overwrite a password with the masked placeholder or an empty string
+      if (SENSITIVE_KEYS.has(key) && (!value || value === MASKED_PLACEHOLDER)) continue;
+
+      const existing = await this.prisma.platformSetting.findUnique({ where: { key } });
+
+      await this.prisma.platformSetting.upsert({
+        where: { key },
+        update: { value, updatedByUserId: actorUserId },
+        create: { key, value, updatedByUserId: actorUserId },
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId,
+          entityType: 'PlatformSetting',
+          entityId: key,
+          action: existing ? 'UPDATE' : 'CREATE',
+          oldValue: SENSITIVE_KEYS.has(key) ? { masked: true } : { value: existing?.value ?? null },
+          newValue: SENSITIVE_KEYS.has(key) ? { masked: true } : { value },
+        },
+      });
+    }
+
+    // New SMTP settings take effect immediately
+    this.email.invalidateTransporterCache();
+
+    return { ok: true };
+  }
+
+  async testSmtp(to: string): Promise<{ ok: boolean; message: string }> {
+    try {
+      await this.email.sendVerificationEmail(to, 'test-token-smtp-check');
+      return { ok: true, message: `Test email dispatched to ${to}` };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
   }
 
   private computeTrialStatus(club: { status: string; trialEndsAt: Date | null }) {

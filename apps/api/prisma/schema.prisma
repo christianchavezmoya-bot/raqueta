@@ -983,6 +983,17 @@ model MatchLogEntry {
   @@map("match_log_entries")
 }
 
+// ─── PLATFORM SETTINGS ───────────────────────────────────────────────────────
+
+model PlatformSetting {
+  key             String   @id
+  value           String
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  updatedByUserId String?  @map("updated_by_user_id")
+
+  @@map("platform_settings")
+}
+
 // ─── PARENT-CHILD LINKS (Stage 10) ───────────────────────────────────────────
 
 model ParentChildLink {

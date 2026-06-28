@@ -6,14 +6,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
-  LayoutDashboard, Building2, Users, BarChart3, LogOut, ShieldCheck,
+  LayoutDashboard, Building2, Users, Settings, LogOut, ShieldCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 
 const adminNav = [
-  { href: '/admin',         label: 'Overview',  icon: LayoutDashboard, exact: true },
-  { href: '/admin/clubs',   label: 'Clubs',     icon: Building2 },
-  { href: '/admin/players', label: 'Jugadores', icon: Users },
+  { href: '/admin',          label: 'Overview',      icon: LayoutDashboard, exact: true },
+  { href: '/admin/clubs',    label: 'Clubs',         icon: Building2 },
+  { href: '/admin/players',  label: 'Jugadores',     icon: Users },
+  { href: '/admin/settings', label: 'Configuración', icon: Settings },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

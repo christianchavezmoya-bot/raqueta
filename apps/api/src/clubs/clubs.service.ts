@@ -124,7 +124,10 @@ export class ClubsService {
     const isDev = this.config.get<string>('NODE_ENV', 'production') === 'development';
     const verificationToken = isDev ? null : crypto.randomBytes(32).toString('hex');
     const verificationExpiry = isDev ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
+    const trialDaysSetting = await this.prisma.platformSetting.findUnique({ where: { key: 'DEFAULT_TRIAL_DAYS' } });
+    const trialDays = trialDaysSetting ? (Number(trialDaysSetting.value) || TRIAL_DAYS) : TRIAL_DAYS;
+    const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
 
     const result = await this.prisma.$transaction(async tx => {
       const user = await tx.user.create({
@@ -172,8 +175,8 @@ export class ClubsService {
 
     return {
       message: isDev
-        ? 'Club registered! Your 14-day free trial has started — you can log in immediately.'
-        : 'Club registered! Please verify your email to activate your 14-day free trial.',
+        ? `Club registered! Your ${trialDays}-day free trial has started — you can log in immediately.`
+        : `Club registered! Please verify your email to activate your ${trialDays}-day free trial.`,
       clubId: result.club.id,
       trialEndsAt,
     };
