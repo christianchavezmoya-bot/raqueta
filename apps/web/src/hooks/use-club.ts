@@ -115,11 +115,12 @@ export function usePlayers() {
   });
 }
 
-export function useMembershipPlans(clubId?: string) {
+export function useMembershipPlans(clubId?: string, options?: { includeInactive?: boolean }) {
   return useQuery({
-    queryKey: ['membership-plans', clubId],
+    queryKey: ['membership-plans', clubId, options?.includeInactive ?? false],
     queryFn: async () => {
-      const { data } = await api.get(`/clubs/${clubId}/membership-plans`);
+      const query = options?.includeInactive ? '?includeInactive=true' : '';
+      const { data } = await api.get(`/clubs/${clubId}/membership-plans${query}`);
       return data;
     },
     enabled: !!clubId,

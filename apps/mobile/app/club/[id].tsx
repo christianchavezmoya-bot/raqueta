@@ -62,6 +62,45 @@ export default function ClubDetailScreen() {
     enabled: !!selectedCourt && !!selectedDate,
   });
 
+  const { data: myMemberships } = useQuery({
+    queryKey: ['my-memberships-club', id],
+    queryFn: async () => {
+      const { data } = await api.get('/users/me/memberships');
+      return data as any[];
+    },
+    enabled: !!user,
+  });
+
+  const { data: myMembershipRequests } = useQuery({
+    queryKey: ['my-membership-requests-club', id],
+    queryFn: async () => {
+      const { data } = await api.get('/players/me/membership-requests');
+      return data as any[];
+    },
+    enabled: !!user,
+  });
+
+  const requestMembershipMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const { data } = await api.post(`/clubs/${id}/membership-requests`, { planId });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-memberships-club', id] });
+      queryClient.invalidateQueries({ queryKey: ['my-membership-requests-club', id] });
+      Alert.alert('Solicitud enviada', 'El club recibió tu solicitud de membresía.');
+    },
+    onError: (err: any) =>
+      Alert.alert('Error', err.response?.data?.message ?? 'No se pudo enviar la solicitud'),
+  });
+
+  const activeMembership = (myMemberships ?? []).find((membership: any) =>
+    membership.clubId === id && membership.status === 'ACTIVE',
+  );
+  const pendingMembershipRequest = (myMembershipRequests ?? []).find((request: any) =>
+    request.clubId === id && request.status === 'PENDING',
+  );
+
   const reserveMutation = useMutation({
     mutationFn: async (slot: { startTime: string; endTime: string }) => {
       const { data } = await api.post('/reservations', {
@@ -187,6 +226,63 @@ export default function ClubDetailScreen() {
               <View style={s.infoCard}>
                 <Text style={s.infoLabel}>Descripción</Text>
                 <Text style={s.infoText}>{club.profile.description}</Text>
+              </View>
+            )}
+
+            {club.membershipPlans?.length > 0 && (
+              <View style={s.infoCard}>
+                <Text style={s.infoLabel}>Planes de membresía</Text>
+                {club.membershipPlans.map((plan: any) => {
+                  const pendingForPlan = pendingMembershipRequest?.planId === plan.id;
+                  const canRequest = !!user && !activeMembership && !pendingMembershipRequest;
+                  return (
+                    <View key={plan.id} style={s.membershipPlanCard}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.membershipPlanName}>{plan.name}</Text>
+                        <Text style={s.membershipPlanPrice}>
+                          {plan.price === 0
+                            ? 'Gratis'
+                            : new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(plan.price)}
+                        </Text>
+                        {plan.description && <Text style={s.infoText}>{plan.description}</Text>}
+                        {plan.resolvedPaymentInstructions && (
+                          <Text style={s.membershipPlanInstructions}>{plan.resolvedPaymentInstructions}</Text>
+                        )}
+                      </View>
+                      {activeMembership?.planId === plan.id ? (
+                        <View style={s.membershipChip}>
+                          <Text style={s.membershipChipText}>Activa</Text>
+                        </View>
+                      ) : pendingForPlan ? (
+                        <View style={[s.membershipChip, { backgroundColor: '#fef3c7' }]}>
+                          <Text style={[s.membershipChipText, { color: '#92400e' }]}>Pendiente</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[s.membershipAction, !canRequest && { opacity: 0.45 }]}
+                          disabled={!canRequest || requestMembershipMutation.isPending}
+                          onPress={() => {
+                            if (!user) {
+                              Alert.alert('Inicia sesión', 'Debes iniciar sesión para solicitar una membresía.', [
+                                { text: 'Cancelar', style: 'cancel' },
+                                { text: 'Iniciar sesión', onPress: () => router.push('/login') },
+                              ]);
+                              return;
+                            }
+                            requestMembershipMutation.mutate(plan.id);
+                          }}
+                        >
+                          <Text style={s.membershipActionText}>Solicitar</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+                {!user && <Text style={s.membershipNote}>Inicia sesión para solicitar un plan.</Text>}
+                {activeMembership && <Text style={s.membershipNote}>Ya tienes una membresía activa en este club.</Text>}
+                {pendingMembershipRequest && !activeMembership && (
+                  <Text style={s.membershipNote}>Tienes una solicitud pendiente en revisión.</Text>
+                )}
               </View>
             )}
 
@@ -444,6 +540,15 @@ const s = StyleSheet.create({
   infoLabel: { fontSize: 12, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   infoText: { fontSize: 14, color: '#374151', flex: 1 },
+  membershipPlanCard: { flexDirection: 'row', gap: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  membershipPlanName: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  membershipPlanPrice: { fontSize: 14, fontWeight: '700', color: '#1b4a86', marginTop: 4, marginBottom: 6 },
+  membershipPlanInstructions: { fontSize: 12, color: '#166534', lineHeight: 18, marginTop: 6 },
+  membershipChip: { alignSelf: 'flex-start', backgroundColor: '#dcfce7', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  membershipChipText: { fontSize: 11, fontWeight: '700', color: '#166534' },
+  membershipAction: { alignSelf: 'flex-start', backgroundColor: '#1b4a86', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  membershipActionText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  membershipNote: { fontSize: 12, color: '#6b7280', marginTop: 4 },
   courtCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 2, borderWidth: 2, borderColor: 'transparent' },
   courtCardSelected: { borderColor: '#16a34a' },
   courtHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },

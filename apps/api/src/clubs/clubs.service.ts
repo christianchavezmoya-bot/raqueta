@@ -79,6 +79,7 @@ export class ClubsService {
           where: { active: true },
           select: { id: true, name: true, photoUrl: true, bio: true, experienceYears: true, specialties: true, certifications: true },
         },
+        membershipPlans: { where: { active: true } },
       },
     });
     if (!club) throw new NotFoundException('Club not found');
@@ -366,16 +367,29 @@ export class ClubsService {
   }
 
   private withResolvedAccent<T extends { profile?: Record<string, any> | null }>(club: T): T {
-    if (!club.profile) return club;
+    const withPlans = 'membershipPlans' in club && Array.isArray((club as any).membershipPlans)
+      ? {
+          ...(club as any),
+          membershipPlans: (club as any).membershipPlans.map((plan: any) => ({
+            ...plan,
+            resolvedPaymentInstructions:
+              plan.paymentInstructions
+              ?? club.profile?.defaultPaymentInstructions
+              ?? null,
+          })),
+        }
+      : club;
+
+    if (!(withPlans as any).profile) return withPlans;
     return {
-      ...club,
+      ...(withPlans as any),
       profile: {
-        ...club.profile,
-        resolvedAccentColor: resolveAccentColor(club.profile.accentColor),
-        hasMapLocation: club.profile.latitude !== null && club.profile.longitude !== null,
-        mapStatus: this.getMapStatus(club.profile),
+        ...(withPlans as any).profile,
+        resolvedAccentColor: resolveAccentColor((withPlans as any).profile.accentColor),
+        hasMapLocation: (withPlans as any).profile.latitude !== null && (withPlans as any).profile.longitude !== null,
+        mapStatus: this.getMapStatus((withPlans as any).profile),
       },
-    };
+    } as T;
   }
 
   private getMapStatus(profile: Record<string, any>) {

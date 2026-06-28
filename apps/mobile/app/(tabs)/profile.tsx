@@ -31,6 +31,16 @@ export default function ProfileScreen() {
     queryFn: async () => { const { data } = await api.get('/users/me/reservations?limit=5'); return data; },
   });
 
+  const { data: myMemberships } = useQuery({
+    queryKey: ['my-memberships-profile'],
+    queryFn: async () => { const { data } = await api.get('/users/me/memberships'); return data as any[]; },
+  });
+
+  const { data: myMembershipRequests } = useQuery({
+    queryKey: ['my-membership-requests-profile'],
+    queryFn: async () => { const { data } = await api.get('/players/me/membership-requests'); return data as any[]; },
+  });
+
   const { data: myStats } = useQuery({
     queryKey: ['my-stats-profile'],
     queryFn: async () => { const { data } = await api.get('/players/me/stats'); return data; },
@@ -102,6 +112,8 @@ export default function ProfileScreen() {
   const profile = me?.playerProfile;
   const stats = profile?.stats;
   const myChildren = myChildrenData ?? [];
+  const memberships = myMemberships ?? [];
+  const membershipRequests = myMembershipRequests ?? [];
 
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -225,6 +237,61 @@ export default function ProfileScreen() {
           </View>
         </View>
       )}
+
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Mis membresías</Text>
+        {memberships.length === 0 ? (
+          <Text style={s.emptyText}>Sin membresías activas o históricas visibles.</Text>
+        ) : memberships.map((membership: any) => (
+          <View key={membership.id} style={s.membershipCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.membershipTitle}>{membership.club?.name}</Text>
+              <Text style={s.membershipSub}>
+                {membership.plan?.name} · {membership.status === 'ACTIVE' ? 'Activa' : membership.status}
+              </Text>
+              {membership.endDate && (
+                <Text style={s.membershipMeta}>
+                  Vigente hasta {new Date(membership.endDate).toLocaleDateString('es-CL')}
+                </Text>
+              )}
+              {membership.resolvedPaymentInstructions && (
+                <Text style={s.membershipInstructions}>{membership.resolvedPaymentInstructions}</Text>
+              )}
+            </View>
+            <View style={[
+              s.membershipBadge,
+              membership.status === 'ACTIVE' ? s.membershipBadgeActive : s.membershipBadgeInactive,
+            ]}>
+              <Text style={[
+                s.membershipBadgeText,
+                membership.status === 'ACTIVE' ? s.membershipBadgeTextActive : s.membershipBadgeTextInactive,
+              ]}>
+                {membership.status === 'ACTIVE' ? 'Activa' : membership.status}
+              </Text>
+            </View>
+          </View>
+        ))}
+
+        {membershipRequests.length > 0 && (
+          <View style={{ marginTop: 10 }}>
+            <Text style={s.sectionTitle}>Solicitudes enviadas</Text>
+            {membershipRequests.map((request: any) => (
+              <View key={request.id} style={s.membershipCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.membershipTitle}>{request.club?.name}</Text>
+                  <Text style={s.membershipSub}>{request.plan?.name}</Text>
+                  {request.denialReason && (
+                    <Text style={s.membershipMeta}>Motivo: {request.denialReason}</Text>
+                  )}
+                </View>
+                <Text style={s.requestStatus}>
+                  {request.status === 'PENDING' ? 'Pendiente' : request.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
 
       {/* Upcoming reservations */}
       <View style={s.section}>
@@ -539,4 +606,16 @@ const s = StyleSheet.create({
   childSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   childRestricted: { fontSize: 11, color: '#dc2626', marginTop: 3, fontWeight: '600' },
   childStatus: { fontSize: 12, fontWeight: '700' },
+  membershipCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
+  membershipTitle: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  membershipSub: { fontSize: 12, color: '#374151', marginTop: 3 },
+  membershipMeta: { fontSize: 12, color: '#6b7280', marginTop: 4 },
+  membershipInstructions: { fontSize: 12, color: '#166534', marginTop: 6, lineHeight: 17 },
+  membershipBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  membershipBadgeActive: { backgroundColor: '#dcfce7' },
+  membershipBadgeInactive: { backgroundColor: '#f3f4f6' },
+  membershipBadgeText: { fontSize: 11, fontWeight: '700' },
+  membershipBadgeTextActive: { color: '#166534' },
+  membershipBadgeTextInactive: { color: '#4b5563' },
+  requestStatus: { fontSize: 12, fontWeight: '700', color: '#6b7280' },
 });

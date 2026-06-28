@@ -117,6 +117,11 @@ export class UpdateClubProfileDto {
   @IsString()
   accentColor?: string | null;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  defaultPaymentInstructions?: string | null;
+
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   paymentMethods?: string[];

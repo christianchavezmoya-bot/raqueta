@@ -363,11 +363,31 @@ async function main() {
   console.log('✅ Player profiles created');
 
   // ─── MEMBERSHIP FOR player3 ──────────────────────────────────────────────────
-  const existing = await prisma.membership.findFirst({ where: { userId: player3.id, clubId: club.id } });
+  const player3Profile = await prisma.playerProfile.findUnique({ where: { userId: player3.id } });
+  if (!player3Profile) throw new Error('Carlos Silva profile was not created');
+
+  const existingRoster = await prisma.clubPlayerRoster.findFirst({
+    where: { clubId: club.id, linkedPlayerProfileId: player3Profile.id },
+  });
+  const player3Roster = existingRoster
+    ? await prisma.clubPlayerRoster.update({
+        where: { id: existingRoster.id },
+        data: { firstName: 'Carlos', lastName: 'Silva' },
+      })
+    : await prisma.clubPlayerRoster.create({
+        data: {
+          clubId: club.id,
+          firstName: 'Carlos',
+          lastName: 'Silva',
+          linkedPlayerProfileId: player3Profile.id,
+        },
+      });
+
+  const existing = await prisma.membership.findFirst({ where: { rosterId: player3Roster.id, clubId: club.id } });
   if (!existing) {
     await prisma.membership.create({
       data: {
-        userId: player3.id,
+        rosterId: player3Roster.id,
         clubId: club.id,
         planId: plans[1].id,
         status: 'ACTIVE',

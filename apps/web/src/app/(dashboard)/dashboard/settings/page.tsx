@@ -198,6 +198,7 @@ export default function SettingsPage() {
     description: '', address: '', city: '', region: '',
     phone: '', whatsapp: '', email: '', instagram: '',
     website: '', rules: '', cancellationPolicy: '', accentColor: '',
+    defaultPaymentInstructions: '',
   });
 
   const [hours, setHours] = useState(
@@ -221,6 +222,7 @@ export default function SettingsPage() {
         rules: club.profile.rules ?? '',
         cancellationPolicy: club.profile.cancellationPolicy ?? '',
         accentColor: club.profile.accentColor ?? '',
+        defaultPaymentInstructions: club.profile.defaultPaymentInstructions ?? '',
       });
     }
     if (club?.openingHours?.length > 0) {
@@ -329,6 +331,11 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Política de cancelación</label>
               <textarea className="input-field" rows={2} value={profileForm.cancellationPolicy}
                 onChange={e => setProfileForm(f => ({ ...f, cancellationPolicy: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Instrucciones de pago por defecto</label>
+              <textarea className="input-field" rows={3} value={profileForm.defaultPaymentInstructions}
+                onChange={e => setProfileForm(f => ({ ...f, defaultPaymentInstructions: e.target.value }))} />
             </div>
           </div>
           <button

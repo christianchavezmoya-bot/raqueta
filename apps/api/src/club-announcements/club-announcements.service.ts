@@ -94,11 +94,23 @@ export class ClubAnnouncementsService {
         where: {
           clubId,
           status: 'ACTIVE',
-          user: { status: 'ACTIVE' },
+          roster: {
+            linkedPlayerProfile: {
+              user: { status: 'ACTIVE' },
+            },
+          },
         },
         select: {
-          userId: true,
-          user: { select: { email: true } },
+          roster: {
+            select: {
+              linkedPlayerProfile: {
+                select: {
+                  userId: true,
+                  user: { select: { email: true } },
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.playerProfile.findMany({
@@ -114,7 +126,12 @@ export class ClubAnnouncementsService {
     ]);
 
     const deduped = new Map<string, string | null>();
-    for (const entry of [...memberships, ...homeClubPlayers]) {
+    for (const entry of memberships) {
+      const linkedUser = entry.roster.linkedPlayerProfile;
+      if (!linkedUser) continue;
+      deduped.set(linkedUser.userId, linkedUser.user.email);
+    }
+    for (const entry of homeClubPlayers) {
       deduped.set(entry.userId, entry.user.email);
     }
 

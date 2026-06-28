@@ -124,9 +124,9 @@ export class EmailService {
 
   private async getTransporter(): Promise<nodemailer.Transporter | null> {
     const now = Date.now();
-    if (this._cachedTransporter !== null || now < this._cacheExpiresAt) {
-      // Return cached (may be null = no SMTP configured)
-      return now < this._cacheExpiresAt ? this._cachedTransporter : null;
+    if (now < this._cacheExpiresAt) {
+      // Return cached value (including null = no SMTP configured) while the window is still valid.
+      return this._cachedTransporter;
     }
 
     const host = await this.getSetting('SMTP_HOST', '');

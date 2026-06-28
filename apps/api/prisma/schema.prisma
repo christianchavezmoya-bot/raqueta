@@ -176,6 +176,12 @@ enum ParentChildLinkStatus {
   REJECTED
 }
 
+enum MembershipRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -203,7 +209,6 @@ model User {
   twoFactorLoginToken String?   @unique @map("two_factor_login_token")
 
   playerProfile           PlayerProfile?
-  memberships             Membership[]
   reservations            Reservation[]            @relation("UserReservations")
   createdReservations     Reservation[]            @relation("CreatedReservations")
   payments                Payment[]                @relation("UserPayments")
@@ -227,6 +232,8 @@ model User {
   actedPayments           Payment[]                @relation("ActedPayments")
   actedRegistrations      TournamentRegistration[] @relation("ActedRegistrations")
   actedInvitations        MatchInvitation[]        @relation("ActedInvitations")
+  membershipRequests      MembershipRequest[]      @relation("MembershipRequestRequester")
+  decidedMembershipRequests MembershipRequest[]    @relation("MembershipRequestDecider")
 
   @@map("users")
 }
@@ -353,6 +360,7 @@ model Club {
   bonusPointTypes    ClubBonusPointType[]
   bonusPointAwards   ClubBonusPointAward[]
   parentChildLinks   ParentChildLink[]
+  membershipRequests MembershipRequest[]
 
   @@map("clubs")
 }
@@ -377,6 +385,7 @@ model ClubProfile {
   rules              String?
   cancellationPolicy String?  @map("cancellation_policy")
   accentColor        String?  @map("accent_color")
+  defaultPaymentInstructions String? @map("default_payment_instructions")
   paymentMethods     String[] @map("payment_methods")
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -523,16 +532,18 @@ model MembershipPlan {
   billingPeriod BillingPeriod @map("billing_period")
   benefits      String[]
   active        Boolean       @default(true)
+  paymentInstructions String? @map("payment_instructions")
 
-  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  memberships Membership[]
+  club               Club                @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  memberships        Membership[]
+  membershipRequests MembershipRequest[]
 
   @@map("membership_plans")
 }
 
 model Membership {
   id          String           @id @default(uuid())
-  userId      String           @map("user_id")
+  rosterId    String           @map("roster_id")
   clubId      String           @map("club_id")
   planId      String           @map("plan_id")
   status      MembershipStatus @default(ACTIVE)
@@ -542,12 +553,33 @@ model Membership {
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
 
-  user     User           @relation(fields: [userId], references: [id])
-  club     Club           @relation(fields: [clubId], references: [id])
-  plan     MembershipPlan @relation(fields: [planId], references: [id])
+  roster   ClubPlayerRoster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  club     Club             @relation(fields: [clubId], references: [id])
+  plan     MembershipPlan   @relation(fields: [planId], references: [id])
   payments Payment[]
 
   @@map("memberships")
+}
+
+model MembershipRequest {
+  id                String                  @id @default(uuid())
+  clubId            String                  @map("club_id")
+  planId            String                  @map("plan_id")
+  requestedByUserId String                  @map("requested_by_user_id")
+  status            MembershipRequestStatus @default(PENDING)
+  requestedAt       DateTime                @default(now()) @map("requested_at")
+  decidedAt         DateTime?               @map("decided_at")
+  decidedByUserId   String?                 @map("decided_by_user_id")
+  denialReason      String?                 @map("denial_reason")
+
+  club            Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  plan            MembershipPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  requestedByUser User           @relation("MembershipRequestRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  decidedByUser   User?          @relation("MembershipRequestDecider", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([clubId, status])
+  @@index([requestedByUserId, status])
+  @@map("membership_requests")
 }
 
 // ─── RESERVATIONS ────────────────────────────────────────────────────────────
@@ -764,6 +796,7 @@ model ClubPlayerRoster {
   lostMatches         ClubMatchResult[] @relation("ClubMatchLoserRoster")
   rankingEntries      ClubRankingEntry[]
   bonusAwards         ClubBonusPointAward[]
+  memberships         Membership[]
 
   @@unique([clubId, rut])
   @@index([clubId])

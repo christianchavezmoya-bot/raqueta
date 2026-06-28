@@ -1,11 +1,10 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Activity, ArrowLeft, Calendar, History, Trophy, User } from 'lucide-react';
-import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useClubStore } from '@/stores/club.store';
 
@@ -33,7 +32,6 @@ const HAND_LABELS: Record<string, string> = {
 export default function PlayerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const selectedClub = useClubStore(s => s.selectedClub);
 
   const { data: player, isLoading } = useQuery({
@@ -74,16 +72,6 @@ export default function PlayerDetailPage() {
     enabled: !!selectedClub?.id && !!rosterLink?.id,
   });
 
-  const upgradeMutation = useMutation({
-    mutationFn: (role: string) => api.patch(`/players/${id}/role`, { role }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['player', id] });
-      queryClient.invalidateQueries({ queryKey: ['players'] });
-      toast.success('Rol actualizado');
-    },
-    onError: () => toast.error('Error al actualizar rol'),
-  });
-
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -111,7 +99,10 @@ export default function PlayerDetailPage() {
   const winRate = stats?.matchesPlayed > 0
     ? Math.round((stats.wins / stats.matchesPlayed) * 100)
     : 0;
-  const activeMembership = memberships?.find((membership: any) => membership.status === 'ACTIVE');
+  const visibleMemberships = selectedClub?.id
+    ? memberships?.filter((membership: any) => membership.clubId === selectedClub.id)
+    : memberships;
+  const activeMembership = visibleMemberships?.find((membership: any) => membership.status === 'ACTIVE');
 
   return (
     <div className="space-y-6">
@@ -135,34 +126,17 @@ export default function PlayerDetailPage() {
               {profile?.level && (
                 <span className={LEVEL_COLORS[profile.level]}>{LEVEL_LABELS[profile.level]}</span>
               )}
-              <span className={player.role === 'MEMBER' ? 'badge-green' : 'badge-gray'}>
-                {player.role === 'MEMBER' ? 'Socio' : player.role === 'PLAYER' ? 'Jugador' : player.role}
+              <span className={activeMembership ? 'badge-green' : 'badge-gray'}>
+                {activeMembership ? 'Socio activo' : player.role === 'PLAYER' ? 'Jugador' : player.role}
               </span>
             </div>
             <p className="text-sm text-gray-500 mt-1">{player.email}</p>
             {player.phone && <p className="text-sm text-gray-500">{player.phone}</p>}
           </div>
 
-          <div className="flex gap-2">
-            {player.role !== 'MEMBER' && (
-              <button
-                className="btn-primary text-sm"
-                onClick={() => upgradeMutation.mutate('MEMBER')}
-                disabled={upgradeMutation.isPending}
-              >
-                Hacer socio
-              </button>
-            )}
-            {player.role === 'MEMBER' && (
-              <button
-                className="btn-secondary text-sm"
-                onClick={() => upgradeMutation.mutate('PLAYER')}
-                disabled={upgradeMutation.isPending}
-              >
-                Quitar membresia
-              </button>
-            )}
-          </div>
+          <p className="text-xs text-gray-500">
+            La membresía se administra desde el módulo <span className="font-medium">Membresías</span> usando planes y roster del club.
+          </p>
         </div>
 
         {profile && (
@@ -259,7 +233,7 @@ export default function PlayerDetailPage() {
                 </div>
                 <span className="badge-green">Activa</span>
               </div>
-              {memberships?.filter((membership: any) => membership.status !== 'ACTIVE').slice(0, 3).map((membership: any) => (
+              {visibleMemberships?.filter((membership: any) => membership.status !== 'ACTIVE').slice(0, 3).map((membership: any) => (
                 <div key={membership.id} className="flex items-center justify-between py-2 border-b border-gray-50 text-sm">
                   <span className="text-gray-700">{membership.plan?.name}</span>
                   <span className="badge-gray">Expirada</span>
