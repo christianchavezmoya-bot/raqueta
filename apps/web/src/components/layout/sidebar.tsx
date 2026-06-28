@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Calendar, BookOpen, Users, CreditCard,
   Trophy, BarChart3, Settings, Building2, MapPin, UserCheck,
   Award, FileText, Bell, LogOut, ChevronRight, History, ShieldCheck, Link2,
+  Heart, Sliders,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useClubStore } from '@/stores/club.store';
@@ -99,6 +100,36 @@ export default function Sidebar() {
           >
             <ShieldCheck className="w-5 h-5 flex-shrink-0" />
             Admin Console
+          </Link>
+        </div>
+      )}
+
+      {/* Player-only quick links (non-staff) */}
+      {user?.role && !['SUPER_ADMIN', 'CLUB_ADMIN', 'MANAGER', 'RECEPTION', 'INSTRUCTOR'].includes(user.role) && (
+        <div className="px-3 pb-2 border-t border-gray-700 pt-3 space-y-0.5">
+          <Link
+            href="/dashboard/notifications"
+            className={clsx(
+              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+              pathname.startsWith('/dashboard/notifications')
+                ? 'bg-brand-600 text-white'
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white',
+            )}
+          >
+            <Sliders className="w-5 h-5 flex-shrink-0" />
+            Mis notificaciones
+          </Link>
+          <Link
+            href="/dashboard/favorites"
+            className={clsx(
+              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+              pathname.startsWith('/dashboard/favorites')
+                ? 'bg-brand-600 text-white'
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white',
+            )}
+          >
+            <Heart className="w-5 h-5 flex-shrink-0" />
+            Mis favoritos
           </Link>
         </div>
       )}

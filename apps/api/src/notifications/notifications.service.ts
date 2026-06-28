@@ -1,8 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+/**
+ * Default state when a player has never written a preferences row. Every
+ * category is opt-in (TRUE) by default, so existing players keep getting
+ * every category of announcement until they explicitly mute one.
+ */
+const DEFAULT_PREFERENCES = {
+  notifyEvents: true,
+  notifyOffers: true,
+  notifyMembershipOffers: true,
+  notifyMatchFinding: true,
+};
 
 @Injectable()
 export class NotificationsService {
@@ -33,6 +46,12 @@ export class NotificationsService {
     return { message: 'Push token registered' };
   }
 
+  /**
+   * Unconditional send path. Used for transactional notifications
+   * (booking confirmations, 2FA codes, payment confirmations, direct match
+   * invitations, parent/child approvals, role changes). These NEVER consult
+   * PlayerNotificationPreference — they are not marketing/discovery noise.
+   */
   async send(
     userId: string,
     title: string,
@@ -52,6 +71,12 @@ export class NotificationsService {
     return notification;
   }
 
+  /**
+   * Bulk unconditional send path. Used by ClubAnnouncementsService AFTER the
+   * category-mute filter has already trimmed the audience. This method does
+   * not re-consult PlayerNotificationPreference — the audience is already
+   * pre-filtered by the caller.
+   */
   async sendBulk(
     userIds: string[],
     title: string,
@@ -73,6 +98,64 @@ export class NotificationsService {
     Promise.all(userIds.map(id => this.sendExpoPush(id, title, message))).catch(() => {});
 
     return notifications;
+  }
+
+  /**
+   * Read the current player's per-category notification preferences. If no
+   * row exists yet (never mutated), returns the all-TRUE defaults so the UI
+   * doesn't have to special-case "missing" state.
+   */
+  async getPreferences(userId: string) {
+    const existing = await this.prisma.playerNotificationPreference.findUnique({
+      where: { userId },
+    });
+    if (!existing) {
+      return { userId, ...DEFAULT_PREFERENCES, updatedAt: null, isDefault: true };
+    }
+    return {
+      userId: existing.userId,
+      notifyEvents: existing.notifyEvents,
+      notifyOffers: existing.notifyOffers,
+      notifyMembershipOffers: existing.notifyMembershipOffers,
+      notifyMatchFinding: existing.notifyMatchFinding,
+      updatedAt: existing.updatedAt,
+      isDefault: false,
+    };
+  }
+
+  /**
+   * Upsert per-category notification preferences. Any omitted field keeps
+   * the existing value (or the default TRUE for a fresh row).
+   *
+   * IMPORTANT: this method only writes flags. It does NOT itself suppress
+   * anything — the suppression is applied in ClubAnnouncementsService's
+   * audience resolution, which is the single point where category muting
+   * happens.
+   */
+  async updatePreferences(userId: string, dto: UpdateNotificationPreferencesDto) {
+    const data: UpdateNotificationPreferencesDto = { ...dto };
+    return this.prisma.playerNotificationPreference.upsert({
+      where: { userId },
+      create: {
+        userId,
+        notifyEvents: data.notifyEvents ?? DEFAULT_PREFERENCES.notifyEvents,
+        notifyOffers: data.notifyOffers ?? DEFAULT_PREFERENCES.notifyOffers,
+        notifyMembershipOffers:
+          data.notifyMembershipOffers ?? DEFAULT_PREFERENCES.notifyMembershipOffers,
+        notifyMatchFinding:
+          data.notifyMatchFinding ?? DEFAULT_PREFERENCES.notifyMatchFinding,
+      },
+      update: {
+        ...(data.notifyEvents !== undefined ? { notifyEvents: data.notifyEvents } : {}),
+        ...(data.notifyOffers !== undefined ? { notifyOffers: data.notifyOffers } : {}),
+        ...(data.notifyMembershipOffers !== undefined
+          ? { notifyMembershipOffers: data.notifyMembershipOffers }
+          : {}),
+        ...(data.notifyMatchFinding !== undefined
+          ? { notifyMatchFinding: data.notifyMatchFinding }
+          : {}),
+      },
+    });
   }
 
   private async sendExpoPush(userId: string, title: string, body: string) {

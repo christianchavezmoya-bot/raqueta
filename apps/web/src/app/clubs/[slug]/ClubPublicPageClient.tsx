@@ -3,22 +3,29 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CalendarDays, Clock3, Download, MapPin, Share2, Trophy, Users } from 'lucide-react';
+import { CalendarDays, Clock3, Download, Heart, MapPin, Share2, Trophy, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { getContrastText, resolveClubAccent, withAlpha } from '@/lib/club-accent';
 import { usePublicClubBySlug } from '@/hooks/use-club';
+import { useMyFavorites, useToggleFavorite } from '@/hooks/use-favorites';
+import { useAuthStore } from '@/stores/auth.store';
 
 export default function ClubPublicPageClient({ slug }: { slug: string }) {
   const [selectedCourt, setSelectedCourt] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const statsCardRef = useRef<HTMLDivElement | null>(null);
   const { data: club, isLoading } = usePublicClubBySlug(slug);
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const { data: favorites } = useMyFavorites();
+  const toggleFavorite = useToggleFavorite(club?.id ?? '');
 
   const accentColor = resolveClubAccent(club?.profile?.resolvedAccentColor ?? club?.profile?.accentColor);
   const accentText = getContrastText(accentColor);
   const accentSoft = withAlpha(accentColor, '14');
   const accentBorder = withAlpha(accentColor, '33');
+
+  const isFavorite = !!club && (favorites ?? []).some(f => f.clubId === club.id);
 
   const availability = useQuery({
     queryKey: ['club-public-availability', club?.id, selectedCourt, selectedDate],
@@ -102,6 +109,22 @@ export default function ClubPublicPageClient({ slug }: { slug: string }) {
                     Sitio del club
                   </a>
                 )}
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite.mutate(isFavorite)}
+                  disabled={!isAuthenticated || toggleFavorite.isPending}
+                  title={isAuthenticated ? (isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos') : 'Inicia sesión para guardar'}
+                  className={`inline-flex items-center rounded-full border px-5 py-3 text-sm font-semibold transition-colors ${
+                    isFavorite
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  } ${!isAuthenticated ? 'cursor-not-allowed opacity-60' : ''}`}
+                >
+                  <Heart
+                    className={`mr-2 h-4 w-4 ${isFavorite ? 'fill-current text-rose-500' : ''}`}
+                  />
+                  {isFavorite ? 'En tus favoritos' : 'Agregar a favoritos'}
+                </button>
               </div>
             </div>
             <div className="p-8 sm:p-10" style={{ backgroundColor: accentSoft }}>

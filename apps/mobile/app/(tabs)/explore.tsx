@@ -16,6 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import api from '../../src/lib/api';
+import {
+  useMyFavorites,
+  useToggleFavorite,
+} from '../../src/hooks/use-favorites';
+import { useAuthStore } from '../../src/stores/auth.store';
 
 const LEVEL_LABELS: Record<string, string> = {
   BEGINNER: 'Principiante',
@@ -41,6 +46,11 @@ export default function ExploreScreen() {
   const [commune, setCommune] = useState('');
   const [radiusMode, setRadiusMode] = useState(false);
   const [searchLocation, setSearchLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const { data: favorites } = useMyFavorites();
+  const favoriteIds = new Set((favorites ?? []).map(f => f.clubId));
 
   const { data: clubs, isLoading: clubsLoading } = useQuery({
     queryKey: ['clubs-explore'],
@@ -89,9 +99,11 @@ export default function ExploreScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-invitations'] }),
   });
 
-  const filteredClubs = clubs?.data?.filter((club: any) =>
-    !search || club.name.toLowerCase().includes(search.toLowerCase()),
-  ) ?? [];
+  const filteredClubs = clubs?.data?.filter((club: any) => {
+    if (search && !club.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (favoritesOnly && !favoriteIds.has(club.id)) return false;
+    return true;
+  }) ?? [];
 
   const mappableClubs = filteredClubs.filter((club: any) => club.profile?.hasMapLocation);
   const hiddenMapCount = filteredClubs.length - mappableClubs.length;
@@ -161,6 +173,23 @@ export default function ExploreScreen() {
               <Ionicons name="map-outline" size={16} color={clubView === 'map' ? '#fff' : '#374151'} />
               <Text style={[s.toolBtnText, clubView === 'map' && s.toolBtnTextActive]}>Mapa</Text>
             </TouchableOpacity>
+            {isAuthenticated && (
+              <TouchableOpacity
+                style={[s.toolBtn, favoritesOnly && s.toolBtnActive]}
+                onPress={() => setFavoritesOnly(v => !v)}
+                accessibilityRole="button"
+                accessibilityLabel="Mostrar solo favoritos"
+              >
+                <Ionicons
+                  name={favoritesOnly ? 'heart' : 'heart-outline'}
+                  size={16}
+                  color={favoritesOnly ? '#fff' : '#e11d48'}
+                />
+                <Text style={[s.toolBtnText, favoritesOnly && s.toolBtnTextActive]}>
+                  Favoritos{favoritesOnly && favoriteIds.size > 0 ? ` · ${favoriteIds.size}` : ''}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -247,6 +276,12 @@ export default function ExploreScreen() {
                   <Text style={s.warningTag}>Mapa pendiente por geocodificar</Text>
                 )}
               </View>
+              {isAuthenticated ? (
+                <FavoriteToggleButton
+                  clubId={club.id}
+                  isFavorite={favoriteIds.has(club.id)}
+                />
+              ) : null}
               <Ionicons name="chevron-forward" size={18} color="#d1d5db" />
             </TouchableOpacity>
           )}
@@ -488,4 +523,28 @@ const s = StyleSheet.create({
   declineBtn: { flex: 1, borderWidth: 1.5, borderColor: '#fca5a5', backgroundColor: '#fff1f2', borderRadius: 10, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   declineBtnText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
   phoneText: { fontSize: 14, fontWeight: '600', color: '#1b4a86', marginTop: 6 },
+  favBtn: { padding: 6, marginRight: 4 },
 });
+
+function FavoriteToggleButton({ clubId, isFavorite }: { clubId: string; isFavorite: boolean }) {
+  const toggleFavorite = useToggleFavorite(clubId);
+  return (
+    <TouchableOpacity
+      onPress={e => {
+        e.stopPropagation?.();
+        toggleFavorite.mutate(isFavorite);
+      }}
+      disabled={toggleFavorite.isPending}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={s.favBtn}
+      accessibilityRole="button"
+      accessibilityLabel={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+    >
+      <Ionicons
+        name={isFavorite ? 'heart' : 'heart-outline'}
+        size={20}
+        color={isFavorite ? '#e11d48' : '#9ca3af'}
+      />
+    </TouchableOpacity>
+  );
+}

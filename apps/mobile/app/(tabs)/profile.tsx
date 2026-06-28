@@ -424,6 +424,8 @@ export default function ProfileScreen() {
           { label: 'Cambiar foto', icon: 'camera-outline', onPress: handleAvatarPress },
           { label: 'Mis pagos', icon: 'card-outline', onPress: () => {} },
           { label: 'Mis membresías', icon: 'shield-checkmark-outline', onPress: () => {} },
+          { label: 'Mis favoritos', icon: 'heart-outline', onPress: () => router.push('/favorites' as any) },
+          { label: 'Preferencias de notificaciones', icon: 'options-outline', onPress: () => router.push('/notifications-settings' as any) },
           { label: 'Notificaciones', icon: 'notifications-outline', onPress: () => router.push('/notifications' as any) },
         ].map(({ label, icon, onPress }) => (
           <TouchableOpacity key={label} style={s.menuItem} onPress={onPress} activeOpacity={0.7}>

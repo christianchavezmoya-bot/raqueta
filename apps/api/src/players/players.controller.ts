@@ -8,6 +8,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@ne
 import { Role } from '@prisma/client';
 import { PlayersService } from './players.service';
 import { InvitationsService } from '../invitations/invitations.service';
+import { FavoritesService } from '../favorites/favorites.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -15,6 +17,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { LinkRunDto } from './dto/link-run.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
+import { UpdateNotificationPreferencesDto } from '../notifications/dto/update-notification-preferences.dto';
 
 @ApiTags('Players')
 @Controller('players')
@@ -22,6 +25,8 @@ export class PlayersController {
   constructor(
     private readonly playersService: PlayersService,
     private readonly invitationsService: InvitationsService,
+    private readonly favoritesService: FavoritesService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -136,6 +141,47 @@ export class PlayersController {
   @ApiOperation({ summary: 'Get my match invitations (sent and received)' })
   getMyInvitations(@CurrentUser('id') userId: string) {
     return this.invitationsService.getMyInvitations(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/favorites')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List clubs I have favorited (newest first). Available to any player.',
+  })
+  listMyFavorites(@CurrentUser('id') userId: string) {
+    return this.favoritesService.listForPlayer(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/notification-preferences')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Read my per-category notification preferences (events / offers / ' +
+      'membership offers / match finding). Returns all-TRUE defaults if the ' +
+      'row has never been written.',
+  })
+  getMyNotificationPreferences(@CurrentUser('id') userId: string) {
+    return this.notificationsService.getPreferences(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/notification-preferences')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Update my per-category notification preferences. Partial updates are ' +
+      'supported — omitted fields keep their current value. Only affects ' +
+      'category-muted announcements; transactional notifications ' +
+      '(bookings, 2FA codes, payment confirmations, direct match ' +
+      'invitations, parent/child approvals, role changes) are unaffected.',
+  })
+  updateMyNotificationPreferences(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    return this.notificationsService.updatePreferences(userId, dto);
   }
 
   @UseGuards(JwtAuthGuard)

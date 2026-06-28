@@ -11,6 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { getContrastText, resolveClubAccent, withAlpha } from '../../src/lib/club-accent';
+import {
+  useIsClubFavorite,
+  useToggleFavorite,
+} from '../../src/hooks/use-favorites';
 
 const COURT_SURFACE_LABELS: Record<string, string> = {
   CLAY: 'Polvo de ladrillo',
@@ -29,6 +33,10 @@ export default function ClubDetailScreen() {
   const [activeTab, setActiveTab] = useState<'info' | 'courts' | 'availability'>('info');
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
+
+  const isFavorite = useIsClubFavorite(id);
+  const toggleFavorite = useToggleFavorite(id ?? '');
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
 
   const { data: club, isLoading: clubLoading } = useQuery({
     queryKey: ['club-detail', id],
@@ -171,6 +179,24 @@ export default function ClubDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.heroBack}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
+        {isAuthenticated && (
+          <TouchableOpacity
+            onPress={() => toggleFavorite.mutate(isFavorite)}
+            disabled={toggleFavorite.isPending}
+            style={[
+              s.heroFavorite,
+              isFavorite && { backgroundColor: '#fff' },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          >
+            <Ionicons
+              name={isFavorite ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavorite ? '#e11d48' : '#fff'}
+            />
+          </TouchableOpacity>
+        )}
         <View style={[s.heroIcon, { borderColor: accentBorder }]}>
           <Ionicons name="business" size={32} color={accentColor} />
         </View>
@@ -180,6 +206,13 @@ export default function ClubDetailScreen() {
             <Ionicons name="location-outline" size={14} color="#bbf7d0" />
             <Text style={s.heroCity}>{club.profile.city}</Text>
           </View>
+        )}
+        {isAuthenticated && (
+          <Text style={s.heroFavoriteHint}>
+            {isFavorite
+              ? 'En tus favoritos · recibirás sus anuncios'
+              : 'Toca el corazón para seguir este club'}
+          </Text>
         )}
       </View>
 
@@ -521,6 +554,14 @@ const s = StyleSheet.create({
   heroBack: {
     position: 'absolute', top: 56, left: 16, width: 36, height: 36,
     borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center',
+  },
+  heroFavorite: {
+    position: 'absolute', top: 56, right: 16, width: 36, height: 36,
+    borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center',
+  },
+  heroFavoriteHint: {
+    marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center', fontWeight: '500',
   },
   heroIcon: {
     width: 64, height: 64, borderRadius: 20, backgroundColor: '#fff', borderWidth: 2,

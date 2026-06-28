@@ -4,9 +4,11 @@ import { PlayersController } from './players.controller';
 import { InvitationsModule } from '../invitations/invitations.module';
 import { TenisChileService } from '../common/integrations/tenischile/tenischile.service';
 import { RosterModule } from '../clubs/roster/roster.module';
+import { FavoritesModule } from '../favorites/favorites.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [InvitationsModule, RosterModule],
+  imports: [InvitationsModule, RosterModule, FavoritesModule, NotificationsModule],
   providers: [PlayersService, TenisChileService],
   controllers: [PlayersController],
   exports: [PlayersService],

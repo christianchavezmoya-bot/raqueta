@@ -27,6 +27,7 @@ import { ClubAnnouncementsModule } from './club-announcements/club-announcements
 import { HistoryModule } from './history/history.module';
 import { AdminModule } from './admin/admin.module';
 import { ParentChildModule } from './parent-child/parent-child.module';
+import { FavoritesModule } from './favorites/favorites.module';
 
 @Module({
   providers: [
@@ -62,6 +63,7 @@ import { ParentChildModule } from './parent-child/parent-child.module';
     HistoryModule,
     AdminModule,
     ParentChildModule,
+    FavoritesModule,
   ],
 })
 export class AppModule {}

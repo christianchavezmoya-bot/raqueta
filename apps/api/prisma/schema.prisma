@@ -182,6 +182,19 @@ enum MembershipRequestStatus {
   DENIED
 }
 
+/// Platform-defined announcement categories. A player can mute each one
+/// independently via PlayerNotificationPreference. Direct transactional
+/// notifications (booking confirmations, 2FA codes, payment confirmations,
+/// direct match invitations, parent/child approvals, role changes) do NOT
+/// flow through this enum — they always go through the unconditional
+/// `Notification` create path.
+enum NotificationCategory {
+  EVENTS
+  OFFERS
+  MEMBERSHIP_OFFERS
+  MATCH_FINDING
+}
+
 // ─── USERS ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -234,6 +247,8 @@ model User {
   actedInvitations        MatchInvitation[]        @relation("ActedInvitations")
   membershipRequests      MembershipRequest[]      @relation("MembershipRequestRequester")
   decidedMembershipRequests MembershipRequest[]    @relation("MembershipRequestDecider")
+  clubFavorites           ClubFavorite[]
+  notificationPreferences PlayerNotificationPreference?
 
   @@map("users")
 }
@@ -361,6 +376,7 @@ model Club {
   bonusPointAwards   ClubBonusPointAward[]
   parentChildLinks   ParentChildLink[]
   membershipRequests MembershipRequest[]
+  favoritedBy        ClubFavorite[]
 
   @@map("clubs")
 }
@@ -941,12 +957,19 @@ model Notification {
 }
 
 model ClubAnnouncement {
-  id           String         @id @default(uuid())
-  clubId       String         @map("club_id")
-  sentByUserId String         @map("sent_by_user_id")
+  id           String               @id @default(uuid())
+  clubId       String               @map("club_id")
+  sentByUserId String               @map("sent_by_user_id")
   title        String
   body         String
-  createdAt    DateTime       @default(now()) @map("created_at")
+  /// One of the platform-defined NotificationCategory enum values.
+  /// Audience resolution filters out players who have muted this category
+  /// via PlayerNotificationPreference. Critical transactional notifications
+  /// (booking confirmations, 2FA codes, payment confirmations, direct match
+  /// invitations, parent/child approvals, role changes) never use this field
+  /// — they go through the unconditional `Notification` create path.
+  category     NotificationCategory @default(EVENTS)
+  createdAt    DateTime             @default(now()) @map("created_at")
 
   club          Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
   sentByUser    User           @relation("ClubAnnouncementSender", fields: [sentByUserId], references: [id], onDelete: Restrict)
@@ -954,6 +977,43 @@ model ClubAnnouncement {
 
   @@index([clubId, createdAt])
   @@map("club_announcements")
+}
+
+/// A player's "favorite" club. Independent of membership, home-club status,
+/// or any roster relationship — any authenticated player can favorite any
+/// club. Favoriting never creates a ClubPlayerRoster entry.
+model ClubFavorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  clubId    String   @map("club_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clubId])
+  @@index([userId])
+  @@index([clubId])
+  @@map("club_favorites")
+}
+
+/// One row per player. Upserted on the first preference change. Every flag
+/// defaults to TRUE — so existing players keep receiving every category
+/// until they explicitly mute one. Mutes only affect category-based
+/// announcements; transactional notifications (booking confirmations, 2FA
+/// codes, payment confirmations, direct match invitations, parent/child
+/// approvals, role changes) are never routed through this preference row.
+model PlayerNotificationPreference {
+  userId              String   @id @map("user_id")
+  notifyEvents        Boolean  @default(true) @map("notify_events")
+  notifyOffers        Boolean  @default(true) @map("notify_offers")
+  notifyMembershipOffers Boolean @default(true) @map("notify_membership_offers")
+  notifyMatchFinding  Boolean  @default(true) @map("notify_match_finding")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("player_notification_preferences")
 }
 
 // ─── AUDIT LOGS ──────────────────────────────────────────────────────────────
