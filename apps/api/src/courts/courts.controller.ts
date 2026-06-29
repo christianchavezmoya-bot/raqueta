@@ -36,8 +36,8 @@ export class CourtsController {
   @Post('clubs/:clubId/courts')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Add court to club' })
-  create(@Param('clubId') clubId: string, @Body() dto: CreateCourtDto) {
-    return this.courtsService.create(clubId, dto);
+  create(@Param('clubId') clubId: string, @Body() dto: CreateCourtDto, @CurrentUser() actor: ActingUser) {
+    return this.courtsService.create(clubId, dto, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -60,8 +60,8 @@ export class CourtsController {
   @Patch('courts/:id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update court' })
-  update(@Param('id') id: string, @Body() dto: UpdateCourtDto) {
-    return this.courtsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateCourtDto, @CurrentUser() actor: ActingUser) {
+    return this.courtsService.update(id, dto, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -69,8 +69,8 @@ export class CourtsController {
   @Delete('courts/:id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete court' })
-  delete(@Param('id') id: string) {
-    return this.courtsService.delete(id);
+  delete(@Param('id') id: string, @CurrentUser() actor: ActingUser) {
+    return this.courtsService.delete(id, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -78,8 +78,21 @@ export class CourtsController {
   @Post('courts/:id/pricing')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set court pricing' })
-  setPricing(@Param('id') id: string, @Body() dto: CreateCourtPricingDto) {
-    return this.courtsService.setPricing(id, dto);
+  setPricing(@Param('id') id: string, @Body() dto: CreateCourtPricingDto, @CurrentUser() actor: ActingUser) {
+    return this.courtsService.setPricing(id, dto, actor);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Delete('courts/:id/pricing/:userType')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete court pricing tier' })
+  deletePricing(
+    @Param('id') id: string,
+    @Param('userType') userType: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.courtsService.deletePricing(id, userType, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -91,8 +104,9 @@ export class CourtsController {
     @Param('id') id: string,
     @Body() dto: CreateCourtBlockDto,
     @CurrentUser('id') userId: string,
+    @CurrentUser() actor: ActingUser,
   ) {
-    return this.courtsService.createBlock(id, dto, userId);
+    return this.courtsService.createBlock(id, dto, userId, actor);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -100,7 +114,7 @@ export class CourtsController {
   @Delete('court-blocks/:id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Remove court block' })
-  deleteBlock(@Param('id') id: string) {
-    return this.courtsService.deleteBlock(id);
+  deleteBlock(@Param('id') id: string, @CurrentUser() actor: ActingUser) {
+    return this.courtsService.deleteBlock(id, actor);
   }
 }

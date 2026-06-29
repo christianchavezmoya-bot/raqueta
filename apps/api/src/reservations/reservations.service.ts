@@ -16,11 +16,15 @@ export class ReservationsService {
 
   async getAvailability(clubId: string, courtId: string, date: Date) {
     const slots = this.generateTimeSlots(date);
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
     const existing = await this.prisma.reservation.findMany({
       where: {
         courtId,
-        startTime: { gte: new Date(date.setHours(0, 0, 0, 0)) },
-        endTime: { lte: new Date(date.setHours(23, 59, 59, 999)) },
+        startTime: { gte: dayStart },
+        endTime: { lte: dayEnd },
         status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] },
       },
     });
@@ -28,8 +32,8 @@ export class ReservationsService {
     const blocks = await this.prisma.courtBlock.findMany({
       where: {
         courtId,
-        startTime: { lte: new Date(date.setHours(23, 59, 59, 999)) },
-        endTime: { gte: new Date(date.setHours(0, 0, 0, 0)) },
+        startTime: { lte: dayEnd },
+        endTime: { gte: dayStart },
       },
     });
 
@@ -39,7 +43,17 @@ export class ReservationsService {
       const isReserved = existing.some(r => r.startTime < slotEnd && r.endTime > slotStart);
       const isBlocked = blocks.some(b => b.startTime < slotEnd && b.endTime > slotStart);
       const isOpen = this.clubsService.isOpenAt(clubId, slotStart);
-      return { ...slot, available: !isReserved && !isBlocked, isReserved, isBlocked };
+      return {
+        start: slotStart,
+        end: slotEnd,
+        startTime: slotStart,
+        endTime: slotEnd,
+        label: slot.label,
+        available: isOpen && !isReserved && !isBlocked,
+        isOpen,
+        isReserved,
+        isBlocked,
+      };
     });
   }
 

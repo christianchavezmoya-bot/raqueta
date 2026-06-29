@@ -11,6 +11,30 @@ import { usePublicClubBySlug } from '@/hooks/use-club';
 import { useMyFavorites, useToggleFavorite } from '@/hooks/use-favorites';
 import { useAuthStore } from '@/stores/auth.store';
 
+const COURT_SURFACE_LABELS: Record<string, string> = {
+  CLAY: 'Arcilla',
+  HARD: 'Dura',
+  GRASS: 'Césped',
+  SYNTHETIC: 'Sintética',
+  CARPET: 'Alfombra',
+  INDOOR_HARD: 'Dura interior',
+};
+
+function getCourtPricing(court: any) {
+  return {
+    member: court.pricing?.find((item: any) => item.userType === 'MEMBER') ?? null,
+    casual: court.pricing?.find((item: any) => item.userType === 'CASUAL') ?? null,
+  };
+}
+
+function getSlotStatus(slot: any) {
+  if (slot.available) return 'Disponible';
+  if (!slot.isOpen) return 'Fuera de horario';
+  if (slot.isBlocked) return 'Bloqueada';
+  if (slot.isReserved) return 'Ocupada';
+  return 'No disponible';
+}
+
 export default function ClubPublicPageClient({ slug }: { slug: string }) {
   const [selectedCourt, setSelectedCourt] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -210,13 +234,38 @@ export default function ClubPublicPageClient({ slug }: { slug: string }) {
                   className="w-full rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5"
                   style={{ borderColor: selectedCourt === court.id ? accentColor : '#E5E7EB', backgroundColor: selectedCourt === court.id ? accentSoft : '#FFFFFF' }}
                 >
+                  {court.photoUrl ? (
+                    <img src={court.photoUrl} alt={court.name} className="mb-4 h-40 w-full rounded-2xl object-cover" />
+                  ) : null}
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-gray-900">{court.name}</p>
                       <p className="mt-1 text-sm text-gray-600">{court.description || 'Cancha activa para reservas del club'}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-gray-600">
+                        <span className="rounded-full bg-gray-100 px-3 py-1">
+                          {COURT_SURFACE_LABELS[court.surfaceType] ?? court.surfaceType}
+                        </span>
+                        <span className="rounded-full bg-gray-100 px-3 py-1">
+                          {court.indoor ? 'Cubierta' : 'Exterior'}
+                        </span>
+                      </div>
+                      {(getCourtPricing(court).casual || getCourtPricing(court).member) ? (
+                        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                          {getCourtPricing(court).casual ? (
+                            <span className="font-medium text-gray-700">
+                              Casual: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(getCourtPricing(court).casual.price)}/hr
+                            </span>
+                          ) : null}
+                          {getCourtPricing(court).member ? (
+                            <span className="font-medium" style={{ color: accentColor }}>
+                              Socio: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(getCourtPricing(court).member.price)}/hr
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: accentSoft, color: accentColor }}>
-                      {court.surfaceType}
+                      Disponible
                     </span>
                   </div>
                 </button>
@@ -251,6 +300,7 @@ export default function ClubPublicPageClient({ slug }: { slug: string }) {
                       {new Date(slot.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                     <p className="mt-1 text-sm text-gray-500">{slot.available ? 'Disponible' : 'No disponible'}</p>
+                    {!slot.available ? <p className="mt-1 text-xs text-gray-400">{getSlotStatus(slot)}</p> : null}
                   </div>
                   <button
                     type="button"

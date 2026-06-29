@@ -61,7 +61,10 @@ export class ClubsService {
     });
     if (!club) throw new NotFoundException('Club not found');
     return {
-      ...this.withResolvedAccent(club),
+      ...this.withResolvedAccent({
+        ...club,
+        courts: club.courts.map(court => this.decorateCourt(court)),
+      }),
       trialStatus: this.computeTrialStatus(club),
       publicStatsCard: await this.buildPublicStatsCard(club.id),
     };
@@ -84,7 +87,10 @@ export class ClubsService {
     });
     if (!club) throw new NotFoundException('Club not found');
     return {
-      ...this.withResolvedAccent(club),
+      ...this.withResolvedAccent({
+        ...club,
+        courts: club.courts.map(court => this.decorateCourt(court)),
+      }),
       trialStatus: this.computeTrialStatus(club),
       publicStatsCard: await this.buildPublicStatsCard(club.id),
     };
@@ -205,6 +211,15 @@ export class ClubsService {
       data: { status: 'ACTIVE', trialEndsAt: null },
       select: { id: true, name: true, status: true },
     });
+  }
+
+  private decorateCourt<T extends { photoUrl?: string | null; updatedAt?: Date | null }>(court: T): T {
+    if (!court.photoUrl || !court.updatedAt) return court;
+    const joiner = court.photoUrl.includes('?') ? '&' : '?';
+    return {
+      ...court,
+      photoUrl: `${court.photoUrl}${joiner}v=${court.updatedAt.getTime()}`,
+    };
   }
 
   async updateProfile(clubId: string, dto: UpdateClubProfileDto, actor: ActingUser) {

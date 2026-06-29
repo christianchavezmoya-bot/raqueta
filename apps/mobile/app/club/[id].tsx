@@ -1,6 +1,6 @@
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -20,10 +20,27 @@ const COURT_SURFACE_LABELS: Record<string, string> = {
   CLAY: 'Polvo de ladrillo',
   HARD: 'Dura',
   GRASS: 'Césped',
-  ARTIFICIAL_GRASS: 'Césped artificial',
+  SYNTHETIC: 'Sintética',
   CARPET: 'Moqueta',
-  INDOOR: 'Indoor',
+  INDOOR_HARD: 'Dura interior',
 };
+
+function getCourtPricing(court: any) {
+  const member = court.pricing?.find((item: any) => item.userType === 'MEMBER');
+  const casual = court.pricing?.find((item: any) => item.userType === 'CASUAL');
+  return {
+    memberPrice: member?.price ?? null,
+    casualPrice: casual?.price ?? null,
+  };
+}
+
+function getSlotStatus(slot: any) {
+  if (slot.available) return 'Disponible';
+  if (!slot.isOpen) return 'Fuera de horario';
+  if (slot.isBlocked) return 'Bloqueada';
+  if (slot.isReserved) return 'Ocupada';
+  return 'No disponible';
+}
 
 export default function ClubDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -378,22 +395,37 @@ export default function ClubDetailScreen() {
               courts.map((court: any) => (
                 <TouchableOpacity
                   key={court.id}
-                  style={[s.courtCard, selectedCourt === court.id && s.courtCardSelected, selectedCourt === court.id && { borderColor: accentColor }]}
-                  onPress={() => { setSelectedCourt(court.id); setActiveTab('availability'); }}
+                  style={[
+                    s.courtCard,
+                    selectedCourt === court.id && s.courtCardSelected,
+                    selectedCourt === court.id && { borderColor: accentColor },
+                    !court.active && s.courtCardInactive,
+                  ]}
+                  onPress={() => {
+                    if (!court.active) return;
+                    setSelectedCourt(court.id);
+                    setActiveTab('availability');
+                  }}
+                  disabled={!court.active}
                   activeOpacity={0.8}
                 >
+                  {court.photoUrl ? (
+                    <Image source={{ uri: court.photoUrl }} style={s.courtPhoto} resizeMode="cover" />
+                  ) : null}
                   <View style={s.courtHeader}>
-                    <View style={[s.courtIconWrap, { backgroundColor: accentSoft }]}>
-                      <Ionicons name="tennisball" size={20} color={accentColor} />
-                    </View>
+                    {!court.photoUrl ? (
+                      <View style={[s.courtIconWrap, { backgroundColor: accentSoft }]}>
+                        <Ionicons name="tennisball" size={20} color={accentColor} />
+                      </View>
+                    ) : null}
                     <View style={s.courtInfo}>
                       <Text style={s.courtName}>{court.name}</Text>
                       <Text style={s.courtSurface}>
-                        {COURT_SURFACE_LABELS[court.surface] ?? court.surface}
-                        {court.isIndoor ? ' · Cubierta' : ' · Exterior'}
+                        {COURT_SURFACE_LABELS[court.surfaceType] ?? court.surfaceType}
+                        {court.indoor ? ' · Cubierta' : ' · Exterior'}
                       </Text>
                     </View>
-                    {court.status === 'ACTIVE' ? (
+                    {court.active ? (
                       <View style={[s.courtBadge, { backgroundColor: accentSoft }]}>
                         <Text style={[s.courtBadgeText, { color: accentColor }]}>Disponible</Text>
                       </View>
@@ -404,18 +436,21 @@ export default function ClubDetailScreen() {
                     )}
                   </View>
                   <View style={s.courtPrices}>
-                    {court.pricePerHour && (
+                    {getCourtPricing(court).casualPrice ? (
                       <Text style={s.priceText}>
-                        Casual: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(court.pricePerHour)}/hr
+                        Casual: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(getCourtPricing(court).casualPrice)}/hr
                       </Text>
-                    )}
-                    {court.memberPricePerHour && (
+                    ) : null}
+                    {getCourtPricing(court).memberPrice ? (
                       <Text style={[s.priceMember, { color: accentColor }]}>
-                        Socio: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(court.memberPricePerHour)}/hr
+                        Socio: {new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(getCourtPricing(court).memberPrice)}/hr
                       </Text>
-                    )}
+                    ) : null}
                   </View>
-                  <Text style={s.courtCTA}>Toca para reservar →</Text>
+                  {court.description ? <Text style={s.courtDescription}>{court.description}</Text> : null}
+                  <Text style={[s.courtCTA, !court.active && s.courtCTAInactive]}>
+                    {court.active ? 'Toca para reservar →' : 'No disponible para reservas'}
+                  </Text>
                 </TouchableOpacity>
               ))
             )}
@@ -434,8 +469,14 @@ export default function ClubDetailScreen() {
                     {courts.map((c: any) => (
                       <TouchableOpacity
                         key={c.id}
-                        style={[s.courtChip, selectedCourt === c.id && s.courtChipActive, selectedCourt === c.id && { backgroundColor: accentColor, borderColor: accentColor }]}
-                        onPress={() => setSelectedCourt(c.id)}
+                        style={[
+                          s.courtChip,
+                          selectedCourt === c.id && s.courtChipActive,
+                          selectedCourt === c.id && { backgroundColor: accentColor, borderColor: accentColor },
+                          !c.active && s.courtChipDisabled,
+                        ]}
+                        onPress={() => c.active && setSelectedCourt(c.id)}
+                        disabled={!c.active}
                       >
                         <Text style={[s.courtChipText, selectedCourt === c.id && s.courtChipTextActive]}>
                           {c.name}
@@ -528,7 +569,7 @@ export default function ClubDetailScreen() {
                           </View>
                         ) : (
                           <View style={s.slotBadgeOcc}>
-                            <Text style={s.slotBadgeOccText}>Ocupado</Text>
+                            <Text style={s.slotBadgeOccText}>{getSlotStatus(slot)}</Text>
                           </View>
                         )}
                       </TouchableOpacity>
@@ -591,7 +632,9 @@ const s = StyleSheet.create({
   membershipActionText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   membershipNote: { fontSize: 12, color: '#6b7280', marginTop: 4 },
   courtCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 2, borderWidth: 2, borderColor: 'transparent' },
+  courtCardInactive: { opacity: 0.78 },
   courtCardSelected: { borderColor: '#16a34a' },
+  courtPhoto: { width: '100%', height: 152, borderRadius: 12, marginBottom: 14, backgroundColor: '#e5e7eb' },
   courtHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   courtIconWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#f0fdf4', justifyContent: 'center', alignItems: 'center' },
   courtInfo: { flex: 1 },
@@ -599,10 +642,12 @@ const s = StyleSheet.create({
   courtSurface: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   courtBadge: { backgroundColor: '#f0fdf4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   courtBadgeText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
-  courtPrices: { flexDirection: 'row', gap: 12, marginBottom: 8 },
+  courtPrices: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
   priceText: { fontSize: 13, color: '#374151', fontWeight: '600' },
   priceMember: { fontSize: 13, color: '#16a34a', fontWeight: '600' },
+  courtDescription: { fontSize: 12, color: '#6b7280', marginBottom: 8, lineHeight: 18 },
   courtCTA: { fontSize: 12, color: '#16a34a', fontWeight: '600' },
+  courtCTAInactive: { color: '#9ca3af' },
   empty: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { color: '#9ca3af', marginTop: 12, fontSize: 14 },
   courtSelector: { marginBottom: 12 },
@@ -610,6 +655,7 @@ const s = StyleSheet.create({
   selectorLabel: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8 },
   courtChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e5e7eb' },
   courtChipActive: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
+  courtChipDisabled: { opacity: 0.45 },
   courtChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
   courtChipTextActive: { color: '#fff' },
   dateChip: { alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e5e7eb', minWidth: 48 },

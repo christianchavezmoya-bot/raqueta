@@ -12,11 +12,15 @@ export class CourtsService {
   ) {}
 
   async findByClub(clubId: string) {
-    return this.prisma.court.findMany({
+    const courts = await this.prisma.court.findMany({
       where: { clubId },
-      include: { pricing: true, blocks: { where: { endTime: { gt: new Date() } } } },
+      include: {
+        pricing: true,
+        blocks: { where: { endTime: { gt: new Date() } }, orderBy: { startTime: 'asc' } },
+      },
       orderBy: { name: 'asc' },
     });
+    return courts.map(court => this.decorateCourt(court));
   }
 
   async findOne(id: string) {
@@ -29,35 +33,42 @@ export class CourtsService {
       },
     });
     if (!court) throw new NotFoundException('Court not found');
-    return court;
+    return this.decorateCourt(court);
   }
 
-  async create(clubId: string, dto: CreateCourtDto) {
-    return this.prisma.court.create({
+  async create(clubId: string, dto: CreateCourtDto, actor: ActingUser) {
+    await assertClubScope(actor, clubId, this.prisma);
+    const court = await this.prisma.court.create({
       data: { ...dto, clubId },
       include: { pricing: true },
     });
+    return this.decorateCourt(court);
   }
 
   async uploadPhoto(id: string, file: Express.Multer.File, actor: ActingUser) {
     const court = await this.ensureExists(id);
     await assertClubScope(actor, court.clubId, this.prisma);
     const url = await this.media.uploadFixed(file, `courts/${id}/photo`);
-    return this.prisma.court.update({ where: { id }, data: { photoUrl: url } });
+    const updated = await this.prisma.court.update({ where: { id }, data: { photoUrl: url } });
+    return this.decorateCourt(updated);
   }
 
-  async update(id: string, dto: UpdateCourtDto) {
-    await this.ensureExists(id);
-    return this.prisma.court.update({ where: { id }, data: dto });
+  async update(id: string, dto: UpdateCourtDto, actor: ActingUser) {
+    const court = await this.ensureExists(id);
+    await assertClubScope(actor, court.clubId, this.prisma);
+    const updated = await this.prisma.court.update({ where: { id }, data: dto, include: { pricing: true, blocks: true } });
+    return this.decorateCourt(updated);
   }
 
-  async delete(id: string) {
-    await this.ensureExists(id);
+  async delete(id: string, actor: ActingUser) {
+    const court = await this.ensureExists(id);
+    await assertClubScope(actor, court.clubId, this.prisma);
     return this.prisma.court.delete({ where: { id } });
   }
 
-  async setPricing(courtId: string, dto: CreateCourtPricingDto) {
-    await this.ensureExists(courtId);
+  async setPricing(courtId: string, dto: CreateCourtPricingDto, actor: ActingUser) {
+    const court = await this.ensureExists(courtId);
+    await assertClubScope(actor, court.clubId, this.prisma);
     return this.prisma.courtPricing.upsert({
       where: { courtId_userType: { courtId, userType: dto.userType } },
       update: dto,
@@ -65,8 +76,17 @@ export class CourtsService {
     });
   }
 
-  async createBlock(courtId: string, dto: CreateCourtBlockDto, createdBy: string) {
-    await this.ensureExists(courtId);
+  async deletePricing(courtId: string, userType: string, actor: ActingUser) {
+    const court = await this.ensureExists(courtId);
+    await assertClubScope(actor, court.clubId, this.prisma);
+    return this.prisma.courtPricing.delete({
+      where: { courtId_userType: { courtId, userType } },
+    });
+  }
+
+  async createBlock(courtId: string, dto: CreateCourtBlockDto, createdBy: string, actor: ActingUser) {
+    const court = await this.ensureExists(courtId);
+    await assertClubScope(actor, court.clubId, this.prisma);
     return this.prisma.courtBlock.create({
       data: {
         courtId,
@@ -79,7 +99,13 @@ export class CourtsService {
     });
   }
 
-  async deleteBlock(blockId: string) {
+  async deleteBlock(blockId: string, actor: ActingUser) {
+    const block = await this.prisma.courtBlock.findUnique({
+      where: { id: blockId },
+      include: { court: { select: { clubId: true } } },
+    });
+    if (!block) throw new NotFoundException('Court block not found');
+    await assertClubScope(actor, block.court.clubId, this.prisma);
     return this.prisma.courtBlock.delete({ where: { id: blockId } });
   }
 
@@ -98,5 +124,14 @@ export class CourtsService {
     const court = await this.prisma.court.findUnique({ where: { id } });
     if (!court) throw new NotFoundException('Court not found');
     return court;
+  }
+
+  private decorateCourt<T extends { photoUrl?: string | null; updatedAt?: Date | null }>(court: T): T {
+    if (!court.photoUrl || !court.updatedAt) return court;
+    const joiner = court.photoUrl.includes('?') ? '&' : '?';
+    return {
+      ...court,
+      photoUrl: `${court.photoUrl}${joiner}v=${court.updatedAt.getTime()}`,
+    };
   }
 }
