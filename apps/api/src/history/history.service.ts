@@ -148,27 +148,33 @@ export class HistoryService {
               tournament: { select: { id: true, name: true } },
               category: { select: { id: true, name: true } },
               court: { select: { id: true, name: true } },
-              playerOne: {
+              playerOneRoster: {
                 select: {
                   id: true,
-                  email: true,
-                  playerProfile: { select: { id: true, displayName: true, homeClubId: true } },
+                  firstName: true,
+                  lastName: true,
+                  linkedPlayerProfile: { select: { id: true, displayName: true } },
                 },
               },
-              playerTwo: {
+              playerTwoRoster: {
                 select: {
                   id: true,
-                  email: true,
-                  playerProfile: { select: { id: true, displayName: true, homeClubId: true } },
+                  firstName: true,
+                  lastName: true,
+                  linkedPlayerProfile: { select: { id: true, displayName: true } },
                 },
               },
-              winner: {
+              winnerRoster: {
                 select: {
                   id: true,
-                  email: true,
-                  playerProfile: { select: { id: true, displayName: true } },
+                  firstName: true,
+                  lastName: true,
+                  linkedPlayerProfile: { select: { id: true, displayName: true } },
                 },
               },
+              teamOne: { include: { player1Roster: true, player2Roster: true } },
+              teamTwo: { include: { player1Roster: true, player2Roster: true } },
+              teamWinner: { include: { player1Roster: true, player2Roster: true } },
             },
             orderBy: [{ updatedAt: 'desc' }],
           })
@@ -371,15 +377,25 @@ export class HistoryService {
               where: {
                 tournament: { clubId },
                 status: { in: [MatchStatus.COMPLETED, MatchStatus.WALKOVER] },
-                OR: [{ playerOneId: linkedUserId }, { playerTwoId: linkedUserId }],
+                OR: [
+                  { playerOneRosterId: rosterId },
+                  { playerTwoRosterId: rosterId },
+                  { winnerRosterId: rosterId },
+                  { teamOne: { OR: [{ player1RosterId: rosterId }, { player2RosterId: rosterId }] } },
+                  { teamTwo: { OR: [{ player1RosterId: rosterId }, { player2RosterId: rosterId }] } },
+                  { teamWinner: { OR: [{ player1RosterId: rosterId }, { player2RosterId: rosterId }] } },
+                ],
               },
               include: {
                 tournament: { select: { id: true, name: true } },
                 category: { select: { id: true, name: true } },
                 court: { select: { id: true, name: true } },
-                playerOne: { select: { id: true, email: true, playerProfile: { select: { id: true, displayName: true } } } },
-                playerTwo: { select: { id: true, email: true, playerProfile: { select: { id: true, displayName: true } } } },
-                winner: { select: { id: true, email: true, playerProfile: { select: { id: true, displayName: true } } } },
+                playerOneRoster: { include: { linkedPlayerProfile: true } },
+                playerTwoRoster: { include: { linkedPlayerProfile: true } },
+                winnerRoster: { include: { linkedPlayerProfile: true } },
+                teamOne: { include: { player1Roster: true, player2Roster: true } },
+                teamTwo: { include: { player1Roster: true, player2Roster: true } },
+                teamWinner: { include: { player1Roster: true, player2Roster: true } },
               },
               orderBy: [{ updatedAt: 'desc' }],
             })

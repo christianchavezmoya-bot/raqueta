@@ -136,12 +136,30 @@ export class ClubRankingsService {
 
   // ─── IMPORT (columnar CSV/XLSX) ───────────────────────────────────────────────
 
-  async importMatchResults(clubId: string, file: Express.Multer.File | undefined, actor: ActingUser) {
+  async importMatchResults(
+    clubId: string,
+    file: Express.Multer.File | undefined,
+    actor: ActingUser,
+    options: { seasonId?: string } = {},
+  ) {
     await this.assertScopedClub(clubId, actor);
     if (!file) throw new BadRequestException('Upload a CSV or XLSX file');
 
-    const rows = this.parseWorkbook(file.buffer);
-    if (!rows.length) throw new BadRequestException('No rows found in uploaded file');
+    const wb = XLSX.read(file.buffer, { type: 'buffer' });
+
+    // ─── 1. (optional) Upsert ranking rules from the Configuración tab
+    const rulesUpsert = await this.upsertRulesFromTab(wb, clubId);
+
+    // ─── 2. Resolve which season these matches belong to
+    const seasonId = options.seasonId ?? (await this.getActiveSeasonId(clubId));
+
+    // ─── 3. Parse match rows from the first non-config sheet, OR fall back
+    //     to the legacy shape (CSV-style flat xlsx with winner/loser headers).
+    const targetSheet = this.pickResultadosSheet(wb);
+    if (!targetSheet) throw new BadRequestException('No rows found in uploaded file');
+
+    const rows = this.parseResultadosWorkbookSheet(targetSheet);
+    if (!rows.length) throw new BadRequestException('No Resultados rows found in uploaded file');
 
     const categoryKeys = new Set((await this.getRules(clubId, actor)).map(r => r.categoryKey));
     const rosterEntries = await this.prisma.clubPlayerRoster.findMany({
@@ -164,8 +182,6 @@ export class ClubRankingsService {
     const unmatchedNames = new Set<string>();
     const createData: Prisma.ClubMatchResultCreateManyInput[] = [];
     let matchedCount = 0;
-
-    const seasonId = await this.getActiveSeasonId(clubId);
 
     for (const row of rows) {
       if (!categoryKeys.has(row.categoryKey)) {
@@ -208,7 +224,197 @@ export class ClubRankingsService {
       matchedRosterEntries: matchedCount,
       unmatchedNames:   Array.from(unmatchedNames).sort(),
       standings,
+      rulesUpserted:   rulesUpsert,
+      targetSeasonId:   seasonId ?? null,
     };
+  }
+
+  // ─── PRIVATE: workbook helpers ───────────────────────────────────────────────
+
+  /**
+   * Look for a sheet called "Configuración" (or "Configuracion"), extract rule
+   * rows, and upsert ClubRankingRule for the club. Also reads season carry-
+   * forward decay if present. Returns a summary; never throws on parse issues.
+   */
+  private async upsertRulesFromTab(wb: XLSX.WorkBook, clubId: string) {
+    const sheetName = wb.SheetNames.find(n => this.normalize(n) === 'configuracion');
+    if (!sheetName) return { found: false, rulesUpserted: 0, seasonUpdated: false };
+
+    const raw = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
+    let seasonUpdated = false;
+    let rulesUpserted = 0;
+
+    // Find the header row by header labels (whitespace/diacritics tolerant)
+    const headerRowIdx = raw.findIndex(row =>
+      Array.isArray(row) && row.some(v => {
+        const n = this.normalize(v);
+        return n === 'clavedecategoria' || n === 'categorykey' || n === 'clave_categoria';
+      }),
+    );
+    if (headerRowIdx === -1) return { found: true, rulesUpserted: 0, seasonUpdated };
+
+    // Header columns after normalization
+    const headers = (raw[headerRowIdx] as unknown[]).map(v => this.normalize(v));
+
+    for (let i = headerRowIdx + 1; i < raw.length; i++) {
+      const row = raw[i] as unknown[];
+      if (!Array.isArray(row)) continue;
+      // A row where every cell is empty is treated as a section divider:
+      // stop walking the rule table there (the season-decay row sits below).
+      const rowNonEmpty = (row as unknown[]).some(v => String(v ?? '').trim() !== '');
+      if (!rowNonEmpty) break;
+
+      const obj: Record<string, string> = {};
+      for (let j = 0; j < headers.length; j++) {
+        obj[headers[j]] = String(row[j] ?? '').trim();
+      }
+      // Strip empty/diacritic headers
+      const cleanCategory = obj['clavedecategoria'];
+      if (!cleanCategory) continue;
+      const label = obj['etiquetavisible'] || cleanCategory;
+      const winnerRaw = obj['puntosalganador'];
+      const loserRaw  = obj['puntosalperdedor'];
+      if (winnerRaw === undefined || loserRaw === undefined) continue;
+      const winnerPoints = Number(String(winnerRaw).replace(/[^-\d.]/g, ''));
+      const loserPoints  = Number(String(loserRaw).replace(/[^-\d.]/g, ''));
+      if (!Number.isFinite(winnerPoints) || !Number.isFinite(loserPoints)) continue;
+      const activeRaw = obj['activa'] ?? 'SI';
+      const active = !/^no$/i.test(activeRaw);
+
+      const categoryKey = cleanCategory.toUpperCase();
+      await this.prisma.clubRankingRule.upsert({
+        where: { clubId_categoryKey: { clubId, categoryKey } },
+        update: { label, winnerPoints, loserPoints, active },
+        create: { clubId, categoryKey, label, winnerPoints, loserPoints, active },
+      });
+      rulesUpserted++;
+    }
+
+    // Carry-forward decay row: looks for a single-cell row labeled with the
+    // decay header. Walking the whole sheet keeps this tolerant to row order.
+    const activeSeason = await this.prisma.rankingSeason.findFirst({
+      where: { clubId, status: RankingSeasonStatus.ACTIVE },
+      orderBy: { startedAt: 'desc' },
+    });
+    for (const row of raw) {
+      if (!Array.isArray(row)) continue;
+      const first = String(row[0] ?? '').trim();
+      if (this.normalize(first).startsWith('season carryforward decay') ||
+          this.normalize(first).startsWith('season carry forward decay')) {
+        const rawValue = row[1];
+        const parsed = Number(String(rawValue ?? '').replace(/[^-\d.]/g, ''));
+        if (Number.isFinite(parsed)) {
+          if (activeSeason) {
+            await this.prisma.rankingSeason.update({
+              where: { id: activeSeason.id },
+              data: { carryForwardDecayPercent: Math.round(parsed) },
+            });
+            seasonUpdated = true;
+          }
+        }
+        break;
+      }
+    }
+
+    return { found: true, rulesUpserted, seasonUpdated };
+  }
+
+  /**
+   * Pick the sheet that holds Resultados rows. Honors a literal "Resultados"
+   * tab when present (multi-tab template export). Falls back to the first
+   * non-config / non-instructions sheet for legacy single-tab uploads.
+   */
+  private pickResultadosSheet(wb: XLSX.WorkBook): XLSX.WorkSheet | null {
+    const exact = wb.SheetNames.find(n => this.normalize(n) === 'resultados');
+    if (exact) return wb.Sheets[exact];
+    const fallback = wb.SheetNames.find(n =>
+      !['configuracion', 'miembros', 'liguilla', 'dobles', 'instrucciones'].includes(this.normalize(n)),
+    );
+    return fallback ? wb.Sheets[fallback] : wb.Sheets[wb.SheetNames[0]];
+  }
+
+  private normalize(input: unknown): string {
+    return String(input ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  /**
+   * Parse a Resultados-shaped sheet (row-per-match) into ParsedImportRows.
+   * Mandatory columns (by header name): ganador, perdedor, tipoResultado,
+   * fecha. Optional: sets. Extra columns are ignored.
+   *
+   * Uses header-1 sheet shape so leading instruction/comment rows can be
+   * detected (they look like data rows when defval is applied).
+   */
+  private parseResultadosWorkbookSheet(sheet: XLSX.WorkSheet): ParsedImportRow[] {
+    const rawRows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' }) as string[][];
+    const MANDATORY_LABELS = ['ganador', 'perdedor', 'tiporesultado', 'fecha'];
+
+    // 1) Find the header row index by scanning for a row whose normalized cells
+    //    contain the mandatory labels.
+    let headerIdx = -1;
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = (rawRows[i] ?? []).map(v => this.normalize(v));
+      if (MANDATORY_LABELS.every(label => row.includes(label))) {
+        headerIdx = i;
+        break;
+      }
+    }
+    if (headerIdx === -1) {
+      throw new BadRequestException(
+        `Resultados sheet must contain a header row with at least: ${MANDATORY_LABELS.join(', ')}. None was found.`,
+      );
+    }
+
+    const headers = (rawRows[headerIdx] ?? []).map(v => this.normalize(v));
+    const col = (name: string) => headers.indexOf(name);
+    const winnerIdx = col('ganador');
+    const loserIdx  = col('perdedor');
+    const typeIdx   = col('tiporesultado');
+    const setsIdx   = col('sets');
+    const dateIdx   = col('fecha');
+    const winnerEmailIdx = col('winneremail') >= 0 ? col('winneremail') : col('winner_email');
+    const loserEmailIdx  = col('loseremail')  >= 0 ? col('loseremail')  : col('loser_email');
+
+    const parsed: ParsedImportRow[] = [];
+
+    for (let i = headerIdx + 1; i < rawRows.length; i++) {
+      const row = (rawRows[i] ?? []) as string[];
+      const cell = (idx: number) => (idx >= 0 ? String(row[idx] ?? '').trim() : '');
+      const winnerNameRaw = cell(winnerIdx);
+      const loserNameRaw  = cell(loserIdx);
+      const categoryKey   = cell(typeIdx).toUpperCase();
+      const setScores     = this.parseSetScores(cell(setsIdx));
+      const dateStr       = cell(dateIdx);
+
+      // Blank row → silently skip
+      if (!categoryKey && !winnerNameRaw && !loserNameRaw) continue;
+      const recordedAt = dateStr ? new Date(dateStr) : new Date(NaN);
+      if (Number.isNaN(recordedAt.getTime())) {
+        throw new BadRequestException(
+          `Resultados row ${i + 2} is missing or has invalid date in 'fecha'`,
+        );
+      }
+
+      parsed.push({
+        rowNumber:     i + 2,
+        winnerNameRaw,
+        loserNameRaw,
+        winnerEmail:   cell(winnerEmailIdx) || undefined,
+        loserEmail:    cell(loserEmailIdx) || undefined,
+        categoryKey,
+        recordedAt,
+        setScores,
+      });
+    }
+
+    if (!parsed.length) {
+      throw new BadRequestException('No Resultados rows found in uploaded file (no rows below the header)');
+    }
+    return parsed;
   }
 
   // ─── IMPORT GRID (Part C) ────────────────────────────────────────────────────

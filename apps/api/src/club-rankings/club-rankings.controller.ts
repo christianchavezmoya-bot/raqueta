@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -80,10 +81,11 @@ export class ClubRankingsController {
   @ApiOperation({ summary: 'Import internal club match results from CSV/XLSX and recalculate standings' })
   importMatchResults(
     @Param('clubId') clubId: string,
+    @Query('seasonId') seasonId: string | undefined,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() actor: ActingUser,
   ) {
-    return this.clubRankingsService.importMatchResults(clubId, file, actor);
+    return this.clubRankingsService.importMatchResults(clubId, file, actor, { seasonId });
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

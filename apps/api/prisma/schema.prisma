@@ -101,6 +101,16 @@ enum TournamentFormat {
   LEAGUE
 }
 
+/// Sub-bracket within a tournament. Promotional / playoff style brackets have
+/// separate winners and losers sub-brackets once a player loses in the main
+/// bracket. Bracket metadata is intentionally separate from `round` so a
+/// stage promotion-playoff can carry BOTH (round="SF" + stage="LOSERS") etc.
+enum BracketStage {
+  MAIN
+  WINNERS
+  LOSERS
+}
+
 enum MatchStatus {
   SCHEDULED
   IN_PROGRESS
@@ -221,34 +231,31 @@ model User {
   twoFactorExpiry     DateTime? @map("two_factor_expiry")
   twoFactorLoginToken String?   @unique @map("two_factor_login_token")
 
-  playerProfile           PlayerProfile?
-  reservations            Reservation[]            @relation("UserReservations")
-  createdReservations     Reservation[]            @relation("CreatedReservations")
-  payments                Payment[]                @relation("UserPayments")
-  confirmedPayments       Payment[]                @relation("ConfirmedPayments")
-  notifications           Notification[]
-  instructorProfiles      Instructor[]
-  ownedClubs              Club[]
-  auditLogs               AuditLog[]               @relation("ActorLogs")
-  refreshTokens           RefreshToken[]
-  tournamentRegistrations TournamentRegistration[]
-  matchesAsPlayerOne      Match[]                  @relation("PlayerOneMatches")
-  matchesAsPlayerTwo      Match[]                  @relation("PlayerTwoMatches")
-  wonMatches              Match[]                  @relation("WonMatches")
-  rankings                Ranking[]
-  enteredClubMatchResults ClubMatchResult[]
-  sentClubAnnouncements   ClubAnnouncement[]       @relation("ClubAnnouncementSender")
-  givenBonusAwards        ClubBonusPointAward[]
-  parentLinks             ParentChildLink[]        @relation("ParentLinks")
-  childLinks              ParentChildLink[]        @relation("ChildLinks")
-  approvedLinks           ParentChildLink[]        @relation("ApprovedLinks")
-  actedPayments           Payment[]                @relation("ActedPayments")
-  actedRegistrations      TournamentRegistration[] @relation("ActedRegistrations")
-  actedInvitations        MatchInvitation[]        @relation("ActedInvitations")
-  membershipRequests      MembershipRequest[]      @relation("MembershipRequestRequester")
-  decidedMembershipRequests MembershipRequest[]    @relation("MembershipRequestDecider")
-  clubFavorites           ClubFavorite[]
-  notificationPreferences PlayerNotificationPreference?
+  playerProfile             PlayerProfile?
+  reservations              Reservation[]                 @relation("UserReservations")
+  createdReservations       Reservation[]                 @relation("CreatedReservations")
+  payments                  Payment[]                     @relation("UserPayments")
+  confirmedPayments         Payment[]                     @relation("ConfirmedPayments")
+  notifications             Notification[]
+  instructorProfiles        Instructor[]
+  ownedClubs                Club[]
+  auditLogs                 AuditLog[]                    @relation("ActorLogs")
+  refreshTokens             RefreshToken[]
+  rankings                  Ranking[]
+  enteredClubMatchResults   ClubMatchResult[]
+  sentClubAnnouncements     ClubAnnouncement[]            @relation("ClubAnnouncementSender")
+  givenBonusAwards          ClubBonusPointAward[]
+  parentLinks               ParentChildLink[]             @relation("ParentLinks")
+  childLinks                ParentChildLink[]             @relation("ChildLinks")
+  approvedLinks             ParentChildLink[]             @relation("ApprovedLinks")
+  actedPayments             Payment[]                     @relation("ActedPayments")
+  actedRegistrations        TournamentRegistration[]      @relation("ActedRegistrations")
+  registeredRegistrations   TournamentRegistration[]      @relation("RegisteredRegistrations")
+  actedInvitations          MatchInvitation[]             @relation("ActedInvitations")
+  membershipRequests        MembershipRequest[]           @relation("MembershipRequestRequester")
+  decidedMembershipRequests MembershipRequest[]           @relation("MembershipRequestDecider")
+  clubFavorites             ClubFavorite[]
+  notificationPreferences   PlayerNotificationPreference?
 
   @@map("users")
 }
@@ -283,21 +290,21 @@ model PlayerProfile {
   publicVisibility Boolean     @default(true) @map("public_visibility")
 
   // Stage 3 — player discovery
-  comuna             String?   @map("comuna")
-  availableForMatch  Boolean   @default(false) @map("available_for_match")
-  availableWeekdays  Boolean   @default(false) @map("available_weekdays")
-  availableWeekends  Boolean   @default(false) @map("available_weekends")
-  showPhotoInSearch  Boolean   @default(true) @map("show_photo_in_search")
-  shareStatsWithClub Boolean   @default(true) @map("share_stats_with_club")
-  shareStatsWithPlayers Boolean @default(false) @map("share_stats_with_players")
-  lastKnownLatitude  Float?    @map("last_known_latitude")
-  lastKnownLongitude Float?    @map("last_known_longitude")
-  locationUpdatedAt  DateTime? @map("location_updated_at")
-  runPlayerId        String?   @map("run_player_id")
-  runRankCached      Int?      @map("run_rank_cached")
-  runPointsCached    Int?      @map("run_points_cached")
-  runAtpPointsCached Int?      @map("run_atp_points_cached")
-  runLastSyncedAt    DateTime? @map("run_last_synced_at")
+  comuna                String?   @map("comuna")
+  availableForMatch     Boolean   @default(false) @map("available_for_match")
+  availableWeekdays     Boolean   @default(false) @map("available_weekdays")
+  availableWeekends     Boolean   @default(false) @map("available_weekends")
+  showPhotoInSearch     Boolean   @default(true) @map("show_photo_in_search")
+  shareStatsWithClub    Boolean   @default(true) @map("share_stats_with_club")
+  shareStatsWithPlayers Boolean   @default(false) @map("share_stats_with_players")
+  lastKnownLatitude     Float?    @map("last_known_latitude")
+  lastKnownLongitude    Float?    @map("last_known_longitude")
+  locationUpdatedAt     DateTime? @map("location_updated_at")
+  runPlayerId           String?   @map("run_player_id")
+  runRankCached         Int?      @map("run_rank_cached")
+  runPointsCached       Int?      @map("run_points_cached")
+  runAtpPointsCached    Int?      @map("run_atp_points_cached")
+  runLastSyncedAt       DateTime? @map("run_last_synced_at")
 
   // Stage 6 — RUT for roster linking
   rut String? @unique
@@ -351,7 +358,7 @@ model Club {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  owner              User               @relation(fields: [ownerUserId], references: [id])
+  owner              User                  @relation(fields: [ownerUserId], references: [id])
   profile            ClubProfile?
   photos             ClubPhoto[]
   openingHours       ClubOpeningHour[]
@@ -382,27 +389,27 @@ model Club {
 }
 
 model ClubProfile {
-  id                 String   @id @default(uuid())
-  clubId             String   @unique @map("club_id")
-  logoUrl            String?  @map("logo_url")
-  bannerUrl          String?  @map("banner_url")
-  description        String?
-  address            String?
-  city               String?
-  region             String?
-  country            String   @default("Chile")
-  latitude           Float?
-  longitude          Float?
-  phone              String?
-  whatsapp           String?
-  email              String?
-  instagram          String?
-  website            String?
-  rules              String?
-  cancellationPolicy String?  @map("cancellation_policy")
-  accentColor        String?  @map("accent_color")
-  defaultPaymentInstructions String? @map("default_payment_instructions")
-  paymentMethods     String[] @map("payment_methods")
+  id                         String   @id @default(uuid())
+  clubId                     String   @unique @map("club_id")
+  logoUrl                    String?  @map("logo_url")
+  bannerUrl                  String?  @map("banner_url")
+  description                String?
+  address                    String?
+  city                       String?
+  region                     String?
+  country                    String   @default("Chile")
+  latitude                   Float?
+  longitude                  Float?
+  phone                      String?
+  whatsapp                   String?
+  email                      String?
+  instagram                  String?
+  website                    String?
+  rules                      String?
+  cancellationPolicy         String?  @map("cancellation_policy")
+  accentColor                String?  @map("accent_color")
+  defaultPaymentInstructions String?  @map("default_payment_instructions")
+  paymentMethods             String[] @map("payment_methods")
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
@@ -540,15 +547,15 @@ model InstructorAvailability {
 // ─── MEMBERSHIPS ─────────────────────────────────────────────────────────────
 
 model MembershipPlan {
-  id            String        @id @default(uuid())
-  clubId        String        @map("club_id")
-  name          String
-  description   String?
-  price         Float
-  billingPeriod BillingPeriod @map("billing_period")
-  benefits      String[]
-  active        Boolean       @default(true)
-  paymentInstructions String? @map("payment_instructions")
+  id                  String        @id @default(uuid())
+  clubId              String        @map("club_id")
+  name                String
+  description         String?
+  price               Float
+  billingPeriod       BillingPeriod @map("billing_period")
+  benefits            String[]
+  active              Boolean       @default(true)
+  paymentInstructions String?       @map("payment_instructions")
 
   club               Club                @relation(fields: [clubId], references: [id], onDelete: Cascade)
   memberships        Membership[]
@@ -673,6 +680,9 @@ model Tournament {
   price                 Float            @default(0)
   maxPlayers            Int?             @map("max_players")
   createdBy             String           @map("created_by")
+  /// Interclub label — plain text opponent club name, no cross-tenant linkage.
+  /// Full cross-club interclub is intentionally deferred to post-launch.
+  opponentClubName      String?          @map("opponent_club_name")
   createdAt             DateTime         @default(now()) @map("created_at")
   updatedAt             DateTime         @updatedAt @map("updated_at")
 
@@ -680,6 +690,7 @@ model Tournament {
   categories    TournamentCategory[]
   registrations TournamentRegistration[]
   matches       Match[]
+  teams         TournamentTeam[]
 
   @@map("tournaments")
 }
@@ -697,56 +708,122 @@ model TournamentCategory {
   tournament    Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   registrations TournamentRegistration[]
   matches       Match[]
+  teams         TournamentTeam[]
 
   @@map("tournament_categories")
 }
 
+/// A doubles partnership in a DOUBLES-format tournament. Both players are real
+/// roster entries — having an app account is optional. For SINGLES/ROUND_ROBIN
+/// tournaments, registrations reference a roster entry directly (TournamentRegistration.rosterId)
+/// and this model is unused.
+model TournamentTeam {
+  id              String   @id @default(uuid())
+  tournamentId    String   @map("tournament_id")
+  categoryId      String   @map("category_id")
+  player1RosterId String   @map("player1_roster_id")
+  player2RosterId String   @map("player2_roster_id")
+  group           String?
+  label           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tournament      Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category        TournamentCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  player1Roster   ClubPlayerRoster         @relation("TeamPlayer1", fields: [player1RosterId], references: [id])
+  player2Roster   ClubPlayerRoster         @relation("TeamPlayer2", fields: [player2RosterId], references: [id])
+  registrations   TournamentRegistration[]
+  matchesAsOne    Match[]                  @relation("MatchTeamOne")
+  matchesAsTwo    Match[]                  @relation("MatchTeamTwo")
+  matchesAsWinner Match[]                  @relation("MatchTeamWinner")
+
+  @@unique([tournamentId, categoryId, player1RosterId, player2RosterId])
+  @@index([tournamentId, categoryId])
+  @@map("tournament_teams")
+}
+
+/// Registration for a tournament. Always points to a roster entry; the optional
+/// `registeredByUserId` records the staff/member who submitted the registration
+/// (null when there is no app account behind this registration at all).
+/// For DOUBLES-format tournaments the registration is keyed off `teamId` instead
+/// of `rosterId`, and `rosterId` is null — exactly one of rosterId/teamId is set.
 model TournamentRegistration {
-  id            String        @id @default(uuid())
-  tournamentId  String        @map("tournament_id")
-  categoryId    String        @map("category_id")
-  playerId      String        @map("player_id")
-  actedByUserId String?       @map("acted_by_user_id")
-  status        String        @default("PENDING")
-  paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
-  seedNumber    Int?          @map("seed_number")
-  registeredAt  DateTime      @default(now()) @map("registered_at")
+  id                 String        @id @default(uuid())
+  tournamentId       String        @map("tournament_id")
+  categoryId         String        @map("category_id")
+  rosterId           String?       @map("roster_id")
+  teamId             String?       @map("team_id")
+  actedByUserId      String?       @map("acted_by_user_id")
+  registeredByUserId String?       @map("registered_by_user_id")
+  status             String        @default("PENDING")
+  paymentStatus      PaymentStatus @default(PENDING) @map("payment_status")
+  seedNumber         Int?          @map("seed_number")
+  registeredAt       DateTime      @default(now()) @map("registered_at")
 
-  tournament  Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  category    TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  player      User               @relation(fields: [playerId], references: [id])
-  actedByUser User?              @relation("ActedRegistrations", fields: [actedByUserId], references: [id])
-  payments    Payment[]
+  tournament       Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category         TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  roster           ClubPlayerRoster?  @relation("RosterRegistrations", fields: [rosterId], references: [id], onDelete: Cascade)
+  team             TournamentTeam?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  actedByUser      User?              @relation("ActedRegistrations", fields: [actedByUserId], references: [id])
+  registeredByUser User?              @relation("RegisteredRegistrations", fields: [registeredByUserId], references: [id])
+  payments         Payment[]
 
+  @@index([tournamentId, categoryId, rosterId])
+  @@index([tournamentId, categoryId, teamId])
+  @@index([rosterId])
   @@map("tournament_registrations")
 }
 
 // ─── MATCHES ─────────────────────────────────────────────────────────────────
 
 model Match {
-  id             String      @id @default(uuid())
-  tournamentId   String?     @map("tournament_id")
-  categoryId     String?     @map("category_id")
-  round          String?
-  playerOneId    String      @map("player_one_id")
-  playerTwoId    String      @map("player_two_id")
-  playerOneScore String?     @map("player_one_score")
-  playerTwoScore String?     @map("player_two_score")
-  winnerId       String?     @map("winner_id")
-  scheduledTime  DateTime?   @map("scheduled_time")
-  courtId        String?     @map("court_id")
-  status         MatchStatus @default(SCHEDULED)
-  notes          String?
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  id                String       @id @default(uuid())
+  tournamentId      String?      @map("tournament_id")
+  categoryId        String?      @map("category_id")
+  round             String?
+  /// Sub-bracket within a tournament. MAIN for the primary bracket,
+  /// WINNERS for the bracket feeding the final of a winners' tournament
+  /// stage, LOSERS for the consolation/loss bracket of a promotional
+  /// playoff structure. Independent of `round` (round="SF" + stage="LOSERS"
+  /// is a valid state for promotion playoffs).
+  bracketStage      BracketStage @default(MAIN) @map("bracket_stage")
+  // Singles-style refs — either roster OR team refs must be set; both optional.
+  playerOneRosterId String?      @map("player_one_roster_id")
+  playerTwoRosterId String?      @map("player_two_roster_id")
+  winnerRosterId    String?      @map("winner_roster_id")
+  // Doubles-style refs.
+  teamOneId         String?      @map("team_one_id")
+  teamTwoId         String?      @map("team_two_id")
+  teamWinnerId      String?      @map("team_winner_id")
+  playerOneScore    String?      @map("player_one_score")
+  playerTwoScore    String?      @map("player_two_score")
+  setScores         Json?        @map("set_scores")
+  scheduledTime     DateTime?    @map("scheduled_time")
+  courtId           String?      @map("court_id")
+  status            MatchStatus  @default(SCHEDULED)
+  notes             String?
+  /// Interclub label — plain text opponent club name (overrides tournament-level
+  /// for the rare case of mixed-roster ties). No cross-tenant linkage.
+  opponentClubName  String?      @map("opponent_club_name")
+  recordedAt        DateTime?    @map("recorded_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  tournament Tournament?         @relation(fields: [tournamentId], references: [id])
-  category   TournamentCategory? @relation(fields: [categoryId], references: [id])
-  playerOne  User                @relation("PlayerOneMatches", fields: [playerOneId], references: [id])
-  playerTwo  User                @relation("PlayerTwoMatches", fields: [playerTwoId], references: [id])
-  winner     User?               @relation("WonMatches", fields: [winnerId], references: [id])
-  court      Court?              @relation(fields: [courtId], references: [id])
+  tournament      Tournament?         @relation(fields: [tournamentId], references: [id])
+  category        TournamentCategory? @relation(fields: [categoryId], references: [id])
+  playerOneRoster ClubPlayerRoster?   @relation("MatchPlayerOne", fields: [playerOneRosterId], references: [id], onDelete: SetNull)
+  playerTwoRoster ClubPlayerRoster?   @relation("MatchPlayerTwo", fields: [playerTwoRosterId], references: [id], onDelete: SetNull)
+  winnerRoster    ClubPlayerRoster?   @relation("MatchWinner", fields: [winnerRosterId], references: [id], onDelete: SetNull)
+  teamOne         TournamentTeam?     @relation("MatchTeamOne", fields: [teamOneId], references: [id], onDelete: SetNull)
+  teamTwo         TournamentTeam?     @relation("MatchTeamTwo", fields: [teamTwoId], references: [id], onDelete: SetNull)
+  teamWinner      TournamentTeam?     @relation("MatchTeamWinner", fields: [teamWinnerId], references: [id], onDelete: SetNull)
+  court           Court?              @relation(fields: [courtId], references: [id])
 
+  @@index([tournamentId, bracketStage, round])
+  @@index([playerOneRosterId])
+  @@index([playerTwoRosterId])
+  @@index([teamOneId])
+  @@index([teamTwoId])
   @@map("matches")
 }
 
@@ -806,13 +883,19 @@ model ClubPlayerRoster {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  club                Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  linkedPlayerProfile PlayerProfile?    @relation("RosterLink", fields: [linkedPlayerProfileId], references: [id], onDelete: SetNull)
-  wonMatches          ClubMatchResult[] @relation("ClubMatchWinnerRoster")
-  lostMatches         ClubMatchResult[] @relation("ClubMatchLoserRoster")
-  rankingEntries      ClubRankingEntry[]
-  bonusAwards         ClubBonusPointAward[]
-  memberships         Membership[]
+  club                    Club                     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  linkedPlayerProfile     PlayerProfile?           @relation("RosterLink", fields: [linkedPlayerProfileId], references: [id], onDelete: SetNull)
+  wonMatches              ClubMatchResult[]        @relation("ClubMatchWinnerRoster")
+  lostMatches             ClubMatchResult[]        @relation("ClubMatchLoserRoster")
+  rankingEntries          ClubRankingEntry[]
+  bonusAwards             ClubBonusPointAward[]
+  memberships             Membership[]
+  tournamentRegistrations TournamentRegistration[] @relation("RosterRegistrations")
+  teamsAsPlayer1          TournamentTeam[]         @relation("TeamPlayer1")
+  teamsAsPlayer2          TournamentTeam[]         @relation("TeamPlayer2")
+  matchesAsPlayerOne      Match[]                  @relation("MatchPlayerOne")
+  matchesAsPlayerTwo      Match[]                  @relation("MatchPlayerTwo")
+  matchesWon              Match[]                  @relation("MatchWinner")
 
   @@unique([clubId, rut])
   @@index([clubId])
@@ -1004,12 +1087,12 @@ model ClubFavorite {
 /// codes, payment confirmations, direct match invitations, parent/child
 /// approvals, role changes) are never routed through this preference row.
 model PlayerNotificationPreference {
-  userId              String   @id @map("user_id")
-  notifyEvents        Boolean  @default(true) @map("notify_events")
-  notifyOffers        Boolean  @default(true) @map("notify_offers")
-  notifyMembershipOffers Boolean @default(true) @map("notify_membership_offers")
-  notifyMatchFinding  Boolean  @default(true) @map("notify_match_finding")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  userId                 String   @id @map("user_id")
+  notifyEvents           Boolean  @default(true) @map("notify_events")
+  notifyOffers           Boolean  @default(true) @map("notify_offers")
+  notifyMembershipOffers Boolean  @default(true) @map("notify_membership_offers")
+  notifyMatchFinding     Boolean  @default(true) @map("notify_match_finding")
+  updatedAt              DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1099,8 +1182,8 @@ model ParentChildLink {
   approvedByUserId String?               @map("approved_by_user_id")
   approvedAt       DateTime?             @map("approved_at")
 
-  parent     User  @relation("ParentLinks",   fields: [parentUserId],     references: [id])
-  child      User  @relation("ChildLinks",    fields: [childUserId],      references: [id])
+  parent     User  @relation("ParentLinks", fields: [parentUserId], references: [id])
+  child      User  @relation("ChildLinks", fields: [childUserId], references: [id])
   club       Club  @relation(fields: [clubId], references: [id])
   approvedBy User? @relation("ApprovedLinks", fields: [approvedByUserId], references: [id])
 

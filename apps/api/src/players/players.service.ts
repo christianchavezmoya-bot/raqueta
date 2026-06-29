@@ -666,6 +666,15 @@ export class PlayersService {
       throw new NotFoundException('Player stats are private');
     }
 
+    // Resolve any roster entries for either user (across clubs) so we can locate
+    // tournament-level matches now that Match references roster entries, not User.
+    const [playerRosters, opponentRosters] = await Promise.all([
+      this.prisma.clubPlayerRoster.findMany({ where: { linkedPlayerProfileId: player.id }, select: { id: true } }),
+      this.prisma.clubPlayerRoster.findMany({ where: { linkedPlayerProfileId: opponent.id }, select: { id: true } }),
+    ]);
+    const playerRosterIds   = playerRosters.map(r => r.id);
+    const opponentRosterIds = opponentRosters.map(r => r.id);
+
     const [ladderMatches, tournamentMatches, personalLogs] = await Promise.all([
       this.prisma.clubMatchResult.findMany({
         where: {
@@ -695,15 +704,25 @@ export class PlayersService {
         where: {
           status: { in: [MatchStatus.COMPLETED, MatchStatus.WALKOVER] },
           OR: [
-            { playerOneId: player.userId, playerTwoId: opponent.userId },
-            { playerOneId: opponent.userId, playerTwoId: player.userId },
+            {
+              AND: [
+                { playerOneRosterId: { in: playerRosterIds } },
+                { playerTwoRosterId: { in: opponentRosterIds } },
+              ],
+            },
+            {
+              AND: [
+                { playerOneRosterId: { in: opponentRosterIds } },
+                { playerTwoRosterId: { in: playerRosterIds } },
+              ],
+            },
           ],
         },
         select: {
           id: true,
           scheduledTime: true,
           updatedAt: true,
-          winnerId: true,
+          winnerRoster: { select: { linkedPlayerProfileId: true } },
           category: { select: { name: true } },
         },
       }),
@@ -763,7 +782,7 @@ export class PlayersService {
         'TOURNAMENT',
         match.id,
         match.scheduledTime ?? match.updatedAt,
-        match.winnerId ? match.winnerId === player.userId : null,
+        match.winnerRoster ? match.winnerRoster.linkedPlayerProfileId === player.id : null,
         match.category?.name ?? 'Torneo',
       );
     }
@@ -807,6 +826,12 @@ export class PlayersService {
     displayName: string;
     stats?: any;
   }) {
+    const profileRosters = await this.prisma.clubPlayerRoster.findMany({
+      where: { linkedPlayerProfileId: profile.id },
+      select: { id: true },
+    });
+    const profileRosterIds = profileRosters.map(r => r.id);
+
     const [ladderMatches, tournamentMatches, personalLogs] = await Promise.all([
       this.prisma.clubMatchResult.findMany({
         where: {
@@ -826,13 +851,17 @@ export class PlayersService {
       this.prisma.match.findMany({
         where: {
           status: { in: [MatchStatus.COMPLETED, MatchStatus.WALKOVER] },
-          OR: [{ playerOneId: profile.userId }, { playerTwoId: profile.userId }],
+          OR: [
+            { playerOneRosterId: { in: profileRosterIds } },
+            { playerTwoRosterId: { in: profileRosterIds } },
+            { winnerRoster:  { is: { linkedPlayerProfileId: profile.id } } },
+          ],
         },
         select: {
           id: true,
           scheduledTime: true,
           updatedAt: true,
-          winnerId: true,
+          winnerRoster: { select: { linkedPlayerProfileId: true } },
           category: { select: { name: true } },
         },
       }),
@@ -904,7 +933,9 @@ export class PlayersService {
 
     for (const match of tournamentMatches) {
       const playedAt = match.scheduledTime ?? match.updatedAt;
-      const didWin = match.winnerId ? match.winnerId === profile.userId : null;
+      const didWin = match.winnerRoster
+        ? match.winnerRoster.linkedPlayerProfileId === profile.id
+        : null;
       addTrend('TOURNAMENT', playedAt, didWin);
       addBreakdown('TOURNAMENT', 'CATEGORY', match.category?.name ?? 'Torneo', didWin);
     }
