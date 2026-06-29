@@ -11,6 +11,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../common/media/media.service';
 import { TenisChileService } from '../common/integrations/tenischile/tenischile.service';
 import { RosterService } from '../clubs/roster/roster.service';
+import { FavoritesService } from '../favorites/favorites.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { MembershipsService } from '../memberships/memberships.service';
 import { validateAndNormalizeRut } from '../common/utils/rut';
 
 const RUN_REFRESH_HOURS = 24;
@@ -55,6 +58,9 @@ export class PlayersService {
     private media: MediaService,
     private tenisChile: TenisChileService,
     private rosterService: RosterService,
+    private favoritesService: FavoritesService,
+    private notificationsService: NotificationsService,
+    private membershipsService: MembershipsService,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
@@ -481,8 +487,11 @@ export class PlayersService {
 
     const updated = await this.prisma.playerProfile.update({ where: { userId }, data: updateData });
 
-    if (updateData.rut) {
-      await this.rosterService.attemptRosterLink(profile.id).catch(() => {});
+    // If the player just provided name+DOB, attempt an identity match against
+    // every club's roster (NOT RUT — that's sensitive). Surface any new
+    // candidates to the player's `GET /players/me/club-matches` feed.
+    if (updateData.firstName || updateData.lastName || updateData.dateOfBirth) {
+      await this.rosterService.attemptRosterLinkByIdentity(profile.id).catch(() => {});
     }
 
     return updated;
@@ -1025,4 +1034,204 @@ export class PlayersService {
       name: name ?? null,
     };
   }
+
+  // ─── Stage 15: club affiliations ────────────────────────────────────────────
+
+  /**
+   * Returns a unified view of the player's club affiliations. Used by the
+   * mobile home page to render:
+   *   - rosterMatches[]   clubs where the player appears in the roster
+   *                       (by name+DOB) but hasn't yet confirmed the link
+   *   - linkedClubs[]    clubs where the player is confirmed linked
+   *   - memberships[]     active paid memberships
+   *   - favorites[]       casual-tier fans of clubs
+   *   - homeClub          current home club (null if not set)
+   *
+   * RUT is intentionally never read here.
+   */
+  async getMyAffiliations(userId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      include: {
+        homeClub: { include: { profile: true } },
+        rosterLinks: {
+          include: { club: { include: { profile: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!profile) throw new NotFoundException('Player profile not found');
+
+    const rosterMatches = await this.rosterService.findIdentityMatches(profile.id);
+
+    const memberships = await this.prisma.membership.findMany({
+      where: { rosterId: { in: profile.rosterLinks.map(r => r.id) }, status: 'ACTIVE' },
+      include: { plan: true, club: { include: { profile: true } } },
+    });
+
+    const favorites = await this.prisma.clubFavorite.findMany({
+      where: { userId },
+      include: { club: { include: { profile: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const linkedClubs = profile.rosterLinks.map(link => {
+      const hasActiveMembership = memberships.some(m => m.rosterId === link.id);
+      return {
+        rosterId: link.id,
+        clubId:   link.clubId,
+        clubName: link.club.name,
+        club:     link.club,
+        tier:     hasActiveMembership ? 'MEMBER' : 'CASUAL',
+      };
+    });
+
+    return {
+      homeClub: profile.homeClub
+        ? { id: profile.homeClub.id, name: profile.homeClub.name, profile: profile.homeClub.profile }
+        : null,
+      rosterMatches: rosterMatches.map(m => ({
+        rosterId: m.rosterId,
+        clubId:   m.clubId,
+        clubName: m.clubName,
+        firstName: m.firstName,
+        lastName:  m.lastName,
+        dateOfBirth: m.dateOfBirth,
+        division:  m.division,
+      })),
+      linkedClubs,
+      memberships: memberships.map(m => ({
+        id: m.id,
+        clubId: m.clubId,
+        clubName: m.club.name,
+        planId: m.planId,
+        planName: m.plan.name,
+        startDate: m.startDate,
+        endDate: m.endDate,
+      })),
+      favorites: favorites.map(f => ({
+        id: f.id,
+        clubId: f.clubId,
+        clubName: f.club.name,
+        clubProfile: f.club.profile,
+      })),
+    };
+  }
+
+  async confirmRosterMatch(userId: string, rosterId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true, dateOfBirth: true },
+    });
+    if (!profile) throw new NotFoundException('Profile not found');
+
+    const entry = await this.prisma.clubPlayerRoster.findUnique({
+      where: { id: rosterId },
+      include: { club: true },
+    });
+    if (!entry) throw new NotFoundException('Roster entry not found');
+
+    if (
+      profile.firstName !== entry.firstName ||
+      profile.lastName !== entry.lastName ||
+      !sameDate(profile.dateOfBirth, entry.dateOfBirth)
+    ) {
+      throw new BadRequestException(
+        'Tu perfil actual no coincide con este jugador del roster. ' +
+        'Actualiza tu nombre o fecha de nacimiento primero.',
+      );
+    }
+
+    await this.rosterService.linkProfileToRoster(rosterId, profile.id);
+
+    await this.notificationsService
+      .send(
+        userId,
+        'Vinculado a ' + entry.club.name,
+        `Te vinculaste al roster de ${entry.club.name}. Ahora puedes ver tu historial, posiciones y torneos del club en la app.`,
+        'GENERAL',
+      )
+      .catch(() => {});
+
+    return { linked: true, rosterId, clubId: entry.clubId, clubName: entry.club.name };
+  }
+
+  async setHomeClub(userId: string, clubId: string | null) {
+    if (clubId) {
+      const exists = await this.prisma.club.findUnique({ where: { id: clubId } });
+      if (!exists) throw new BadRequestException('Club not found');
+    }
+    const updated = await this.prisma.playerProfile.update({
+      where: { userId },
+      data: { homeClubId: clubId },
+    });
+    return { homeClubId: updated.homeClubId };
+  }
+
+  async joinClub(
+    userId: string,
+    clubId: string,
+    body: { tier: 'CASUAL' | 'MEMBER'; planId?: string },
+  ) {
+    if (body.tier !== 'CASUAL' && body.tier !== 'MEMBER') {
+      throw new BadRequestException("tier debe ser 'CASUAL' o 'MEMBER'");
+    }
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      include: { user: { select: { email: true, phone: true } } },
+    });
+    if (!profile) throw new NotFoundException('Profile not found');
+
+    const club = await this.prisma.club.findUnique({
+      where: { id: clubId },
+      include: { profile: true },
+    });
+    if (!club) throw new NotFoundException('Club not found');
+
+    if (body.tier === 'CASUAL') {
+      const { created } = await this.favoritesService.favorite(userId, clubId);
+      const staffIds = await this.prisma.user.findMany({
+        where: {
+          OR: [
+            { staffClubId: clubId },
+            // Use a raw relation via ownedClubs to find club owners
+          ],
+        },
+        select: { id: true },
+      });
+      for (const s of staffIds) {
+        await this.notificationsService
+          .send(
+            s.id,
+            'Nuevo socio casual en ' + club.name,
+            `${profile.displayName} se unió como socio casual. Recibirá anuncios prioritarios del club.`,
+            'GENERAL',
+          )
+          .catch(() => {});
+      }
+      return { tier: 'CASUAL', clubId, clubName: club.name, favorite: { created } };
+    }
+
+    // tier=MEMBER: create a MembershipRequest via the existing service.
+    if (!body.planId) {
+      throw new BadRequestException('Para unirte como socio debes elegir un plan (planId).');
+    }
+    const membershipRequest = await this.membershipsService.createMembershipRequest(
+      clubId,
+      userId,
+      { planId: body.planId },
+    );
+    return { tier: 'MEMBER', clubId, clubName: club.name, membershipRequest };
+  }
 }
+
+function sameDate(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+

@@ -155,6 +155,63 @@ export class PlayersController {
     return this.favoritesService.listForPlayer(userId);
   }
 
+  // ─── Stage 15: club affiliations (player-driven) ───────────────────────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/affiliations')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Unified view of my club affiliations: roster matches (name+DOB), ' +
+      'linked clubs (MEMBER/CASUAL tier), active memberships, favorites, ' +
+      'and current home club. RUT is intentionally never used.',
+  })
+  getMyAffiliations(@CurrentUser('id') userId: string) {
+    return this.playersService.getMyAffiliations(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/club-matches/:rosterId/confirm')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Confirm "yes, I am the person on this roster entry" — links me in. ' +
+      'Identity is verified server-side by name+DOB; RUT is not used.',
+  })
+  confirmRosterMatch(
+    @CurrentUser('id') userId: string,
+    @Param('rosterId') rosterId: string,
+  ) {
+    return this.playersService.confirmRosterMatch(userId, rosterId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/home-club')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set my home club (pass null to clear)' })
+  setHomeClub(@CurrentUser('id') userId: string, @Body('clubId') clubId: string | null) {
+    return this.playersService.setHomeClub(userId, clubId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('clubs/:clubId/join')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Join a club as Casual (free, priority notifications) or as Member " +
+      "(creates a MembershipRequest that staff must approve).",
+  })
+  joinClub(
+    @CurrentUser('id') userId: string,
+    @Param('clubId') clubId: string,
+    @Body() body: { tier: 'CASUAL' | 'MEMBER'; planId?: string },
+  ) {
+    return this.playersService.joinClub(userId, clubId, body);
+  }
+
   /**
    * Mobile-Home announcement carousel source. Returns the most-recent
    * announcement for each club the player has favorited, already filtered

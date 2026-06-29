@@ -525,7 +525,8 @@ export default function PlayersPage() {
           </span>
           <span>
             Importante: el roster del club es la fuente de identidad para resultados,
-            torneos y dobles — los jugadores sin app pueden ser agregados sin cuenta.
+            torneos y dobles. <strong>Matching con la app por nombre + apellido + fecha de nacimiento</strong>
+            {' · '}RUT es opcional y nunca se usa como clave de emparejamiento.
           </span>
         </div>
       </div>

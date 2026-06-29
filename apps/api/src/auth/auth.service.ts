@@ -4,6 +4,8 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +17,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RosterService } from '../clubs/roster/roster.service';
 import { Role } from '@prisma/client';
 
 const OTP_EXPIRY_MINUTES = 10;
@@ -27,6 +30,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private email: EmailService,
+    @Inject(forwardRef(() => RosterService)) private rosterService: RosterService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -38,6 +42,9 @@ export class AuthService {
 
     const verificationToken = isDev ? null : crypto.randomBytes(32).toString('hex');
     const verificationExpiry = isDev ? null : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const displayName = (dto.displayName?.trim())
+      || `${dto.firstName.trim()} ${dto.lastName.trim()}`.trim();
 
     const user = await this.prisma.user.create({
       data: {
@@ -53,9 +60,39 @@ export class AuthService {
     });
 
     const profile = await this.prisma.playerProfile.create({
-      data: { userId: user.id, displayName: dto.displayName },
+      data: {
+        userId: user.id,
+        displayName,
+        firstName: dto.firstName.trim(),
+        lastName:  dto.lastName.trim(),
+        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+        homeClubId:    dto.homeClubId ?? null,
+      },
     });
     await this.prisma.playerStats.create({ data: { playerId: profile.id } });
+
+    // Stage 15: if name+DOB present, find any unlinked roster entries across
+    // the platform that match the brand-new player. RUT is intentionally NOT
+    // used. Auto-link candidates whose match is unique per (profile, club);
+    // ambiguous matches (multiple clubs with the same name+DOB) are left as
+    // candidates for the player to resolve via the new club-matches endpoint.
+    if (dto.dateOfBirth) {
+      const matches = await this.rosterService
+        .findIdentityMatches(profile.id)
+        .catch(() => []);
+      const byClub = new Map<string, typeof matches>();
+      for (const m of matches) {
+        if (!byClub.has(m.clubId)) byClub.set(m.clubId, []);
+        byClub.get(m.clubId)!.push(m);
+      }
+      for (const [, list] of byClub) {
+        if (list.length === 1) {
+          await this.rosterService
+            .linkProfileToRoster(list[0].rosterId, profile.id)
+            .catch(() => {});
+        }
+      }
+    }
 
     if (!isDev) {
       await this.email.sendVerificationEmail(user.email, verificationToken!);

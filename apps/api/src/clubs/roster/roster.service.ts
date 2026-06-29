@@ -91,12 +91,34 @@ export class RosterService {
             });
             updated++;
           } else {
-            await this.prisma.clubPlayerRoster.create({
+            const createdRoster = await this.prisma.clubPlayerRoster.create({
               data: { clubId, ...row },
             });
             created++;
-            // Attempt auto-link after import
-            await this.tryAutoLinkByRut(clubId, row.rut);
+
+            // Attempt identity-match auto-link when an existing PlayerProfile has
+            // matching (firstName, lastName, dateOfBirth). RUT is **not** used —
+            // the only way the new roster row links to a profile is via the
+            // identity tuple. This is best-effort; failures are silent.
+            try {
+              const profile = await this.prisma.playerProfile.findFirst({
+                where: {
+                  firstName:   row.firstName,
+                  lastName:    row.lastName,
+                  dateOfBirth: row.dateOfBirth,
+                  homeClubId:  clubId,
+                },
+                select: { id: true },
+              });
+              if (profile) {
+                await this.prisma.clubPlayerRoster.update({
+                  where: { id: createdRoster.id },
+                  data: { linkedPlayerProfileId: profile.id },
+                });
+              }
+            } catch {
+              /* ignore race / id-shape mismatch */
+            }
           }
         } else {
           // No RUT — always insert, no dedup possible
@@ -178,56 +200,104 @@ export class RosterService {
     return this.formatEntry(updated);
   }
 
-  // ─── LINKING (Part A) ────────────────────────────────────────────────────────
+  // ─── LINKING (Stage 15: name+DOB identity, not RUT) ───────────────────────
 
   /**
-   * Called on registration and when a player updates their RUT.
-   * Finds an unlinked roster entry in the player's home club (if set) that matches by RUT.
-   * Returns the linked entry or null if no match.
+   * Find every unlinked roster entry whose (firstName, lastName, dateOfBirth)
+   * matches the player's profile, **across every club**. RUT is intentionally
+   * not used (sensitive personal data).
+   *
+   * Returns an array of candidate matches with their club context so the
+   * calling code can decide whether to auto-link (single match) or surface
+   * the list for the player to pick from (multiple matches, e.g. duplicate
+   * names across clubs).
    */
-  async attemptRosterLink(playerProfileId: string): Promise<string | null> {
+  async findIdentityMatches(playerProfileId: string): Promise<Array<{
+    rosterId: string;
+    clubId: string;
+    clubName: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth: Date | null;
+    division: string | null;
+  }>> {
     const profile = await this.prisma.playerProfile.findUnique({
       where: { id: playerProfileId },
-      select: { homeClubId: true, rut: true },
+      select: { firstName: true, lastName: true, dateOfBirth: true },
     });
-    if (!profile?.homeClubId || !profile.rut) return null;
-    return this.tryAutoLinkByRut(profile.homeClubId, profile.rut, playerProfileId);
+    if (!profile?.firstName || !profile.lastName || !profile.dateOfBirth) return [];
+
+    return this.prisma.clubPlayerRoster.findMany({
+      where: {
+        firstName:       profile.firstName,
+        lastName:        profile.lastName,
+        dateOfBirth:     profile.dateOfBirth,
+        linkedPlayerProfileId: null,
+      },
+      include: { club: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    }).then(rows => rows.map(r => ({
+      rosterId:    r.id,
+      clubId:      r.clubId,
+      clubName:    r.club.name,
+      firstName:   r.firstName,
+      lastName:    r.lastName,
+      dateOfBirth: r.dateOfBirth,
+      division:    r.division,
+    })));
   }
 
-  private async tryAutoLinkByRut(
-    clubId: string,
-    rut: string,
-    profileId?: string,
-  ): Promise<string | null> {
-    // Find unlinked roster entry with matching RUT in this club
-    const rosterEntry = await this.prisma.clubPlayerRoster.findFirst({
-      where: { clubId, rut, linkedPlayerProfileId: null },
+  /**
+   * Link a roster entry to a player profile. Caller is responsible for
+   * confirming the player opted-in (via the new confirm-match endpoint or
+   * the signup hook). Idempotent: returns the roster id whether newly
+   * linked or already linked.
+   */
+  async linkProfileToRoster(rosterId: string, playerProfileId: string): Promise<string | null> {
+    const entry = await this.prisma.clubPlayerRoster.findUnique({
+      where: { id: rosterId },
+      select: { clubId: true, linkedPlayerProfileId: true },
     });
-    if (!rosterEntry) return null;
+    if (!entry) return null;
 
-    // Resolve the player profile if not provided
-    let targetProfileId = profileId;
-    if (!targetProfileId) {
-      const profile = await this.prisma.playerProfile.findFirst({
-        where: { rut, homeClubId: clubId },
-        select: { id: true },
-      });
-      if (!profile) return null;
-      targetProfileId = profile.id;
+    // If this profile is already linked to a different roster at the same club, refuse.
+    if (entry.linkedPlayerProfileId && entry.linkedPlayerProfileId !== playerProfileId) {
+      throw new BadRequestException('Esa fila de roster ya está vinculada a otra cuenta.');
+    }
+    if (entry.linkedPlayerProfileId === playerProfileId) return rosterId;
+
+    // Verify there's no clash: same profile not already linked to another roster at this club.
+    const clash = await this.prisma.clubPlayerRoster.findFirst({
+      where: { clubId: entry.clubId, linkedPlayerProfileId: playerProfileId, NOT: { id: rosterId } },
+    });
+    if (clash) {
+      throw new BadRequestException('Ya tienes otra fila de roster en este club.');
     }
 
-    // Ensure this profile isn't already linked to another roster entry at this club
-    const alreadyLinked = await this.prisma.clubPlayerRoster.findFirst({
-      where: { clubId, linkedPlayerProfileId: targetProfileId },
-    });
-    if (alreadyLinked) return null;
-
     await this.prisma.clubPlayerRoster.update({
-      where: { id: rosterEntry.id },
-      data: { linkedPlayerProfileId: targetProfileId },
+      where: { id: rosterId },
+      data: { linkedPlayerProfileId: playerProfileId },
     });
+    return rosterId;
+  }
 
-    return rosterEntry.id;
+  /**
+   * Backwards-compatible name. New code should call findIdentityMatches + linkProfileToRoster.
+   * Auto-links exactly one unlinked roster row across all clubs that matches the
+   * profile's (firstName, lastName, dateOfBirth). Used by the signup hook.
+   */
+  async attemptRosterLinkByIdentity(playerProfileId: string): Promise<string[]> {
+    const candidates = await this.findIdentityMatches(playerProfileId);
+    const linked: string[] = [];
+    for (const c of candidates) {
+      try {
+        const result = await this.linkProfileToRoster(c.rosterId, playerProfileId);
+        if (result) linked.push(result);
+      } catch {
+        /* race or clash — ignore */
+      }
+    }
+    return linked;
   }
 
   // ─── WITHDRAW (Part E) ───────────────────────────────────────────────────────
@@ -399,7 +469,21 @@ export class RosterService {
   // ─── CSV/XLSX PARSER ─────────────────────────────────────────────────────────
 
   private parseRosterWorkbook(buffer: Buffer): RosterRow[] {
-    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    // CSV path: parse UTF-8 directly so we don't double-encode accented names.
+    // The xlsx library re-encodes CSV bytes as latin-1, which corrupts
+    // characters like Renée, María, Peña. Skip xlsx for CSV files entirely.
+    const looksLikeCsv = looksLikeCsvFile(buffer);
+    if (looksLikeCsv) {
+      const text = stripBom(buffer).toString('utf8');
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+      if (lines.length < 2) return [];
+      const headerCells = splitCsvLine(lines[0]);
+      return lines.slice(1).map((line, i) => this.rosterCsvRowToObject(headerCells, splitCsvLine(line), i));
+    }
+
+    // XLSX path — strip a UTF-8 BOM before parsing.
+    const clean = stripBom(buffer);
+    const wb = XLSX.read(clean, { type: 'buffer', cellDates: true });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
 
@@ -410,11 +494,23 @@ export class RosterService {
         return '';
       };
 
-      const firstName = get('first_name', 'firstname', 'nombre');
+      const firstName = get('first_name', 'firstname', 'nombre', 'nombres');
       const lastName  = get('last_name',  'lastname',  'apellido', 'apellidos');
       if (!firstName || !lastName) {
         throw new BadRequestException(`Row ${index + 2}: firstName and lastName are required`);
       }
+
+      const dobRaw = get('date_of_birth', 'dateofbirth', 'fecha_nacimiento', 'fecha nacimiento');
+      if (!dobRaw) {
+        throw new BadRequestException(
+          `Row ${index + 2}: dateOfBirth is required (column: fechaNacimiento / date_of_birth)`,
+        );
+      }
+      const d = new Date(dobRaw);
+      if (Number.isNaN(d.getTime())) {
+        throw new BadRequestException(`Row ${index + 2}: invalid dateOfBirth "${dobRaw}"`);
+      }
+      const dateOfBirth: Date = d;
 
       const rawRut = get('rut', 'run');
       let rut: string | undefined;
@@ -424,13 +520,6 @@ export class RosterService {
         } catch {
           throw new BadRequestException(`Row ${index + 2}: invalid RUT "${rawRut}"`);
         }
-      }
-
-      const dobRaw = get('date_of_birth', 'dateofbirth', 'fecha_nacimiento', 'fecha nacimiento');
-      let dateOfBirth: Date | undefined;
-      if (dobRaw) {
-        const d = new Date(dobRaw);
-        if (!Number.isNaN(d.getTime())) dateOfBirth = d;
       }
 
       return {
@@ -446,4 +535,94 @@ export class RosterService {
       };
     });
   }
+
+  private rosterCsvRowToObject(headerCells: string[], cells: string[], index: number): RosterRow {
+    const m = new Map(headerCells.map((h, idx) => [normalizeHeaderKey(h), cells[idx] ?? '']));
+    const get = (...keys: string[]) => {
+      for (const k of keys) {
+        const v = m.get(k);
+        if (v !== undefined && v !== '') return String(v).trim();
+      }
+      return '';
+    };
+
+    const firstName = get('first_name', 'firstname', 'nombre', 'nombres');
+    const lastName  = get('last_name',  'lastname',  'apellido', 'apellidos');
+    if (!firstName || !lastName) {
+      throw new BadRequestException(`Row ${index + 2}: firstName and lastName are required`);
+    }
+
+    const dobRaw = get('date_of_birth', 'dateofbirth', 'fecha_nacimiento', 'fecha nacimiento');
+    if (!dobRaw) {
+      throw new BadRequestException(
+        `Row ${index + 2}: dateOfBirth is required (column: fechaNacimiento / date_of_birth)`,
+      );
+    }
+    const d = new Date(dobRaw);
+    if (Number.isNaN(d.getTime())) {
+      throw new BadRequestException(`Row ${index + 2}: invalid dateOfBirth "${dobRaw}"`);
+    }
+    const dateOfBirth: Date = d;
+
+    const rawRut = get('rut', 'run');
+    let rut: string | undefined;
+    if (rawRut) {
+      try {
+        rut = validateAndNormalizeRut(rawRut);
+      } catch {
+        throw new BadRequestException(`Row ${index + 2}: invalid RUT "${rawRut}"`);
+      }
+    }
+
+    return {
+      firstName,
+      lastName,
+      dateOfBirth,
+      rut,
+      phone:    get('phone', 'telefono', 'celular') || undefined,
+      address:  get('address', 'direccion') || undefined,
+      suburb:   get('suburb', 'comuna') || undefined,
+      postcode: get('postcode', 'codigo_postal', 'zip') || undefined,
+      city:     get('city', 'ciudad') || undefined,
+    };
+  }
+}
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function stripBom(buffer: Buffer): Buffer {
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.subarray(3);
+  }
+  return buffer;
+}
+
+function looksLikeCsvFile(buffer: Buffer): boolean {
+  const head = buffer.subarray(0, 4096).toString('utf8', 0, Math.min(buffer.length, 4096));
+  if (head.includes('PK\x03\x04')) return false; // xlsx zip signature
+  return /^[\s\S]{0,2000},/.test(head);
+}
+
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else cur += ch;
+    } else {
+      if (ch === ',') { out.push(cur); cur = ''; }
+      else if (ch === '"') inQuotes = true;
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function normalizeHeaderKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '_');
 }

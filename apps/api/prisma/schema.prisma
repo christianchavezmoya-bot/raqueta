@@ -278,6 +278,12 @@ model PlayerProfile {
   id               String      @id @default(uuid())
   userId           String      @unique @map("user_id")
   displayName      String      @map("display_name")
+  // Stage 15 — split identity fields used for roster matching.
+  // Per the privacy model these are SHARED with clubs on which the player
+  // has any affiliation (linked roster, membership, or home club selection);
+  // RUT is **not** used for matching and stays private to the user.
+  firstName        String?     @map("first_name")
+  lastName         String?     @map("last_name")
   profilePhotoUrl  String?     @map("profile_photo_url")
   bio              String?
   dateOfBirth      DateTime?   @map("date_of_birth")

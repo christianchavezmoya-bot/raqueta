@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { RosterModule } from '../clubs/roster/roster.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         signOptions: { expiresIn: config.get('JWT_EXPIRES_IN', '15m') },
       }),
     }),
+    forwardRef(() => RosterModule),
   ],
   providers: [AuthService, JwtStrategy],
   // EmailService is provided globally via EmailModule

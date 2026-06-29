@@ -7,6 +7,7 @@ import { RosterModule } from '../clubs/roster/roster.module';
 import { FavoritesModule } from '../favorites/favorites.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ClubAnnouncementsModule } from '../club-announcements/club-announcements.module';
+import { MembershipsModule } from '../memberships/memberships.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ClubAnnouncementsModule } from '../club-announcements/club-announcement
     FavoritesModule,
     NotificationsModule,
     ClubAnnouncementsModule,
+    MembershipsModule,
   ],
   providers: [PlayersService, TenisChileService],
   controllers: [PlayersController],
