@@ -480,19 +480,30 @@ export class PlayersService {
     const profile = await this.prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundException('Profile not found');
 
-    const updateData = { ...data };
+    const updateData: any = { ...data };
     if (updateData.rut !== undefined && updateData.rut !== null) {
       updateData.rut = validateAndNormalizeRut(String(updateData.rut));
+    }
+    // Prisma's DateTime columns need a full ISO-8601 string; clients send
+    // YYYY-MM-DD. Convert at the boundary.
+    if (typeof updateData.dateOfBirth === 'string' && updateData.dateOfBirth.trim() !== '') {
+      const d = new Date(updateData.dateOfBirth);
+      if (Number.isNaN(d.getTime())) {
+        throw new BadRequestException('dateOfBirth inválido');
+      }
+      updateData.dateOfBirth = d;
     }
 
     const updated = await this.prisma.playerProfile.update({ where: { userId }, data: updateData });
 
-    // If the player just provided name+DOB, attempt an identity match against
-    // every club's roster (NOT RUT — that's sensitive). Surface any new
-    // candidates to the player's `GET /players/me/club-matches` feed.
-    if (updateData.firstName || updateData.lastName || updateData.dateOfBirth) {
-      await this.rosterService.attemptRosterLinkByIdentity(profile.id).catch(() => {});
-    }
+    // NOTE: We intentionally do NOT auto-link the player to any matching
+    // roster row here. Linking is a consequential action (it gives this
+    // account visibility into the target club's history, standings, and
+    // private membership data), so it must be gated by explicit player
+    // confirmation via POST /players/me/club-matches/:rosterId/confirm.
+    // After this update returns, the player's next call to
+    // GET /players/me/affiliations will surface any new candidates via
+    // its rosterMatches[] response without any side effects here.
 
     return updated;
   }

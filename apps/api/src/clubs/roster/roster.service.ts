@@ -282,23 +282,24 @@ export class RosterService {
   }
 
   /**
-   * Backwards-compatible name. New code should call findIdentityMatches + linkProfileToRoster.
-   * Auto-links exactly one unlinked roster row across all clubs that matches the
-   * profile's (firstName, lastName, dateOfBirth). Used by the signup hook.
+   * (Removed for correctness — see /players/me/club-matches/:rosterId/confirm.)
+   *
+   * Earlier this function silently called linkProfileToRoster() for every
+   * identity match it found. That violated the "consequential action requires
+   * confirmation" invariant: linking one account to another's club membership
+   * without the player ever clicking "yes".
+   *
+   * Replaced by the player-driven flow: callers now surface candidates via
+   * findIdentityMatches() (returned in GET /players/me/affiliations) and
+   * the player confirms each match explicitly via
+   * POST /players/me/club-matches/:rosterId/confirm, which is the ONLY path
+   * that calls linkProfileToRoster() for the identity-matching flow.
+   *
+   * The intentional auto-link paths that survive (and are correct because
+   * a human staff/admin initiates them) are:
+   *   - roster import upsert + same-club home-club identity match (staff CSV upload)
+   *   - login/signup flow (user explicitly creates an account)
    */
-  async attemptRosterLinkByIdentity(playerProfileId: string): Promise<string[]> {
-    const candidates = await this.findIdentityMatches(playerProfileId);
-    const linked: string[] = [];
-    for (const c of candidates) {
-      try {
-        const result = await this.linkProfileToRoster(c.rosterId, playerProfileId);
-        if (result) linked.push(result);
-      } catch {
-        /* race or clash — ignore */
-      }
-    }
-    return linked;
-  }
 
   // ─── WITHDRAW (Part E) ───────────────────────────────────────────────────────
 
