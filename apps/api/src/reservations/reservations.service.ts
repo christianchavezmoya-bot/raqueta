@@ -37,12 +37,12 @@ export class ReservationsService {
       },
     });
 
-    return slots.map(slot => {
+    return Promise.all(slots.map(async slot => {
       const slotStart = slot.start;
       const slotEnd = slot.end;
       const isReserved = existing.some(r => r.startTime < slotEnd && r.endTime > slotStart);
       const isBlocked = blocks.some(b => b.startTime < slotEnd && b.endTime > slotStart);
-      const isOpen = this.clubsService.isOpenAt(clubId, slotStart);
+      const isOpen = await this.clubsService.isOpenAt(clubId, slotStart);
       return {
         start: slotStart,
         end: slotEnd,
@@ -54,7 +54,7 @@ export class ReservationsService {
         isReserved,
         isBlocked,
       };
-    });
+    }));
   }
 
   async create(data: {
