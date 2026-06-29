@@ -42,6 +42,7 @@ export class BonusPointsService {
         rosterId:        dto.rosterId,
         bonusTypeId:     dto.bonusTypeId,
         awardedByUserId: actor.id,
+        points:          dto.pointsOverride ?? bonusType.points,
         note:            dto.note,
       },
       include: {

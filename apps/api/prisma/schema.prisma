@@ -168,6 +168,7 @@ enum MatchLogType {
   TRAINING
   COACHING
   FITNESS
+  PRACTICE
 }
 
 enum ClubMatchResultSource {
@@ -993,11 +994,19 @@ model ClubMatchResult {
 }
 
 // Stage 6F — configurable bonus point types (auto-seeded per club)
+// Stage 16: extends `key` to be a recognized source identifier. The PR (base)
+// is computed analytically from seasons, not stored. The other six source
+// keys match the breakdown donut on the Ranking General screen.
 model ClubBonusPointType {
   id     String  @id @default(uuid())
   clubId String  @map("club_id")
+  // Recognized keys (case-insensitive): PE3, PE2, INTER, LIG, DESAFIO, PENALTY.
+  // Any other key is treated as a free-form source for ad-hoc awards.
   key    String
   label  String
+  // Default points awarded for this type. For DESAFIO this is the challenge
+  // stake shown to players; for PENALTY this is the default penalty magnitude;
+  // per-award overrides are allowed (note field carries rationale).
   points Int
   active Boolean @default(true)
 
@@ -1016,6 +1025,11 @@ model ClubBonusPointAward {
   bonusTypeId     String   @map("bonus_type_id")
   awardedByUserId String   @map("awarded_by_user_id")
   awardedAt       DateTime @default(now()) @map("awarded_at")
+  // Stage 16: actual delta applied. For seeded bonus types this defaults to
+  // bonusType.points at award time, but staff can override per award (free-form
+  // positive bonus or negative penalty). Always the authoritative number for
+  // ranking recalculation and for the breakdown card.
+  points         Int      @map("points")
   note            String?
 
   club          Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)

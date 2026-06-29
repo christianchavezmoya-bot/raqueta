@@ -642,6 +642,192 @@ export class ClubRankingsService {
     return this.getInternalRankings(clubId, seasonId);
   }
 
+  // ─── PUBLIC: PLAYER-FACING QUERY ENDPOINTS ───────────────────────────────────
+
+  async getRankingBreakdown(clubId: string, rosterId: string, _actor: ActingUser) {
+    await this.ensureClubExists(clubId);
+    const seasonId = await this.getActiveSeasonId(clubId);
+
+    const [matchWins, matchLosses, bonusAwards, rules] = await Promise.all([
+      this.prisma.clubMatchResult.findMany({
+        where: { clubId, seasonId: seasonId ?? undefined, winnerRosterId: rosterId },
+      }),
+      this.prisma.clubMatchResult.findMany({
+        where: { clubId, seasonId: seasonId ?? undefined, loserRosterId: rosterId },
+      }),
+      this.prisma.clubBonusPointAward.findMany({
+        where: { clubId, seasonId: seasonId ?? '', rosterId },
+        include: { bonusType: true },
+      }),
+      this.prisma.clubRankingRule.findMany({ where: { clubId, active: true } }),
+    ]);
+
+    const ruleMap = new Map(rules.map(r => [r.categoryKey, r]));
+
+    let pr = 0;
+    for (const m of matchWins)  pr += ruleMap.get(m.categoryKey)?.winnerPoints ?? 0;
+    for (const m of matchLosses) pr += ruleMap.get(m.categoryKey)?.loserPoints ?? 0;
+
+    let pe3 = 0, desafios = 0, penalizaciones = 0, otherBonos = 0;
+    for (const award of bonusAwards) {
+      const pts = award.points; // Stage 16 per-award override (falls back to bonusType.points via DB backfill)
+      const key = award.bonusType.key.toUpperCase();
+      if (key === 'PE3')      pe3 += pts;
+      else if (key === 'DESAFIO') desafios += pts;
+      else if (key === 'PENALTY') penalizaciones += pts;
+      else otherBonos += pts;
+    }
+
+    return { pr, pe3, desafios, penalizaciones, otherBonos, total: pr + pe3 + desafios + penalizaciones + otherBonos };
+  }
+
+  async getMyCompetitiveMatches(clubId: string, seasonIdParam: string, actor: ActingUser) {
+    await this.ensureClubExists(clubId);
+
+    const seasonId = seasonIdParam === 'current'
+      ? await this.getActiveSeasonId(clubId)
+      : seasonIdParam;
+
+    // Find the player's roster entry for this club
+    const rosterEntry = await this.prisma.clubPlayerRoster.findFirst({
+      where: {
+        clubId,
+        linkedPlayerProfile: { userId: actor.id },
+      },
+    });
+
+    if (!rosterEntry) return [];
+
+    const results = await this.prisma.clubMatchResult.findMany({
+      where: {
+        clubId,
+        seasonId: seasonId ?? undefined,
+        OR: [{ winnerRosterId: rosterEntry.id }, { loserRosterId: rosterEntry.id }],
+      },
+      include: {
+        winnerRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+        loserRoster:  { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+      },
+      orderBy: { recordedAt: 'desc' },
+    });
+
+    const rules = await this.prisma.clubRankingRule.findMany({ where: { clubId, active: true } });
+    const ruleMap = new Map(rules.map(r => [r.categoryKey, r]));
+
+    return results.map(r => {
+      const iWon = r.winnerRosterId === rosterEntry.id;
+      const rule = ruleMap.get(r.categoryKey);
+      const pointsAwarded = iWon ? (rule?.winnerPoints ?? 0) : (rule?.loserPoints ?? 0);
+      const opponentRoster = iWon ? r.loserRoster : r.winnerRoster;
+      const opponentName = opponentRoster?.linkedPlayerProfile?.displayName
+        ?? (iWon ? r.loserNameRaw : r.winnerNameRaw);
+
+      return {
+        id: r.id,
+        result: iWon ? 'WIN' : 'LOSS',
+        opponentName,
+        roundLabel: r.categoryKey,
+        scoreLabel: null,
+        sets: r.setScores as any,
+        playedAt: r.recordedAt,
+        pointsAwarded,
+        source: r.source,
+      };
+    });
+  }
+
+  async getMyStats(clubId: string, actor: ActingUser) {
+    await this.ensureClubExists(clubId);
+    const matches = await this.getMyCompetitiveMatches(clubId, 'current', actor);
+
+    const wins   = matches.filter(m => m.result === 'WIN').length;
+    const losses = matches.filter(m => m.result === 'LOSS').length;
+    const total  = matches.length;
+    const winRate = total ? (wins / total) * 100 : 0;
+
+    // Cumulative points evolution (running total chronologically)
+    let running = 0;
+    const pointsEvolution = [...matches].reverse().map((m, i) => {
+      running += m.pointsAwarded;
+      return { label: `R${i + 1}`, pts: running };
+    });
+
+    return { matchesPlayed: total, wins, losses, winRate, pointsEvolution };
+  }
+
+  async listMatchResults(
+    clubId: string,
+    opts: { source?: string; limit?: number },
+    _actor: ActingUser,
+  ) {
+    await this.ensureClubExists(clubId);
+
+    const results = await this.prisma.clubMatchResult.findMany({
+      where: { clubId },
+      include: {
+        winnerRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+        loserRoster:  { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+      },
+      orderBy: { recordedAt: 'desc' },
+      take: opts.limit ?? 30,
+    });
+
+    const rules = await this.prisma.clubRankingRule.findMany({ where: { clubId, active: true } });
+    const ruleMap = new Map(rules.map(r => [r.categoryKey, r]));
+
+    return results.map(r => {
+      const rule = ruleMap.get(r.categoryKey);
+      const p1Name = r.winnerRoster?.linkedPlayerProfile?.displayName ?? r.winnerNameRaw;
+      const p2Name = r.loserRoster?.linkedPlayerProfile?.displayName  ?? r.loserNameRaw;
+
+      return {
+        id: r.id,
+        player1Name: p1Name,
+        player1Id: r.winnerRosterId,
+        player2Name: p2Name,
+        player2Id: r.loserRosterId,
+        winnerId: r.winnerRosterId,
+        roundLabel: r.categoryKey,
+        sets: r.setScores,
+        playedAt: r.recordedAt,
+        pointsAwarded: rule?.winnerPoints ?? 0,
+        source: r.source,
+      };
+    });
+  }
+
+  async getMatchResult(clubId: string, resultId: string, _actor: ActingUser) {
+    await this.ensureClubExists(clubId);
+
+    const r = await this.prisma.clubMatchResult.findFirst({
+      where: { id: resultId, clubId },
+      include: {
+        winnerRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+        loserRoster:  { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+      },
+    });
+    if (!r) throw new NotFoundException('Match result not found');
+
+    const rules = await this.prisma.clubRankingRule.findMany({ where: { clubId, active: true } });
+    const ruleMap = new Map(rules.map(rule => [rule.categoryKey, rule]));
+    const rule = ruleMap.get(r.categoryKey);
+
+    return {
+      id: r.id,
+      player1Name: r.winnerRoster?.linkedPlayerProfile?.displayName ?? r.winnerNameRaw,
+      player1Id: r.winnerRosterId,
+      player2Name: r.loserRoster?.linkedPlayerProfile?.displayName ?? r.loserNameRaw,
+      player2Id: r.loserRosterId,
+      winnerId: r.winnerRosterId,
+      roundLabel: r.categoryKey,
+      sets: r.setScores as any,
+      playedAt: r.recordedAt,
+      pointsAwarded: rule?.winnerPoints ?? 0,
+      pointsDeducted: Math.abs(rule?.loserPoints ?? 0),
+      source: r.source,
+    };
+  }
+
   // ─── PRIVATE: PARSING HELPERS ────────────────────────────────────────────────
 
   private parseWorkbook(buffer: Buffer): ParsedImportRow[] {

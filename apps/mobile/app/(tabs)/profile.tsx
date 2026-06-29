@@ -9,11 +9,28 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../src/stores/auth.store';
 import api from '../../src/lib/api';
+import { useHomeState } from '../../src/hooks/use-home-state';
+
+const BG = '#0a0f1a'; const CARD = '#111827'; const GOLD = '#d4a017';
+const GREEN = '#22c55e'; const RED = '#ef4444'; const TEXT = '#f9fafb';
+const SUB = '#9ca3af'; const BORDER = '#1f2937';
+
+const LEVEL_LABELS: Record<string, string> = {
+  BEGINNER: 'Principiante', INTERMEDIATE: 'Intermedio',
+  ADVANCED: 'Avanzado',     COMPETITIVE: 'Competitivo',
+};
+
+function initials(name: string) {
+  return name.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase();
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
+  const home = useHomeState();
+  const firstClubId = home.activeMemberships?.[0]?.club?.id;
+
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [show2FADisable, setShow2FADisable] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
@@ -46,9 +63,21 @@ export default function ProfileScreen() {
     queryFn: async () => { const { data } = await api.get('/players/me/stats'); return data; },
   });
 
+  const { data: rankingEntry } = useQuery({
+    queryKey: ['my-ranking-entry', firstClubId],
+    queryFn: async () => {
+      if (!firstClubId) return null;
+      const { data } = await api.get(`/clubs/${firstClubId}/rankings/internal`);
+      const entries = Array.isArray(data) ? data : [];
+      const profileId = me?.playerProfile?.id;
+      return entries.find((e: any) => e.rosterEntry?.playerProfileId === profileId) ?? entries[0] ?? null;
+    },
+    enabled: !!firstClubId && !!me,
+  });
+
   const enable2FA = useMutation({
     mutationFn: () => api.post('/auth/2fa/enable'),
-    onSuccess: () => { refetchMe(); Alert.alert('2FA activado', 'Se envió un código a tu email para confirmar. En el próximo login, necesitarás el código.'); },
+    onSuccess: () => { refetchMe(); Alert.alert('2FA activado', 'Se envió un código a tu email para confirmar.'); },
     onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'Error'),
   });
 
@@ -57,7 +86,6 @@ export default function ProfileScreen() {
     onSuccess: () => { refetchMe(); setShow2FADisable(false); setDisablePassword(''); Alert.alert('2FA desactivado'); },
     onError: (err: any) => Alert.alert('Contraseña incorrecta', err.response?.data?.message ?? 'Error'),
   });
-
 
   const linkRun = useMutation({
     mutationFn: (value: string) => api.post('/players/me/run-link', { value }),
@@ -106,7 +134,7 @@ export default function ProfileScreen() {
       queryClient.invalidateQueries({ queryKey: ['me-profile'] });
       queryClient.invalidateQueries({ queryKey: ['me'] });
     },
-    onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo actualizar la privacidad'),
+    onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo actualizar'),
   });
 
   const profile = me?.playerProfile;
@@ -121,37 +149,27 @@ export default function ProfileScreen() {
       Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para cambiar tu foto.');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
+      allowsEditing: true, aspect: [1, 1], quality: 0.85,
     });
-
     if (result.canceled) return;
-
     const asset = result.assets[0];
     const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
     const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-    const mimeType = mimeMap[ext] ?? 'image/jpeg';
-
     if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
       Alert.alert('Archivo muy grande', 'La imagen no puede superar los 5 MB.');
       return;
     }
-
     setAvatarUploading(true);
     const form = new FormData();
-    form.append('file', { uri: asset.uri, name: `avatar.${ext}`, type: mimeType } as any);
-
+    form.append('file', { uri: asset.uri, name: `avatar.${ext}`, type: mimeMap[ext] ?? 'image/jpeg' } as any);
     try {
       await api.post('/players/me/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       queryClient.invalidateQueries({ queryKey: ['me-profile'] });
       Alert.alert('Foto actualizada', 'Tu avatar se actualizó correctamente.');
     } catch (err: any) {
-      const msg = err.response?.data?.message ?? 'Error al subir la imagen';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', err.response?.data?.message ?? 'Error al subir la imagen');
     } finally {
       setAvatarUploading(false);
     }
@@ -164,361 +182,292 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const LEVEL_LABELS: Record<string, string> = {
-    BEGINNER: 'Principiante',
-    INTERMEDIATE: 'Intermedio',
-    ADVANCED: 'Avanzado',
-    COMPETITIVE: 'Competitivo',
-  };
+  const displayName = profile?.displayName ?? user?.email ?? 'Jugador';
+  const rank = rankingEntry?.rank;
+  const division = home.activeMemberships?.[0]?.rosterEntry?.division;
+  const levelLabel = LEVEL_LABELS[profile?.level ?? ''] ?? 'Nivel Oro';
 
   return (
     <ScrollView style={s.container} showsVerticalScrollIndicator={false}>
-      {/* Profile header */}
-      <View style={s.profileHeader}>
+      {/* Hero card — image 13 style */}
+      <View style={s.heroCard}>
+        {/* Avatar */}
         <TouchableOpacity onPress={handleAvatarPress} style={s.avatarWrapper} activeOpacity={0.85}>
           {profile?.profilePhotoUrl ? (
             <Image source={{ uri: profile.profilePhotoUrl }} style={s.avatarImage} />
           ) : (
-            <View style={s.avatarLarge}>
-              <Text style={s.avatarText}>
-                {(profile?.displayName ?? user?.email ?? 'U')[0].toUpperCase()}
-              </Text>
+            <View style={s.avatarCircle}>
+              <Text style={s.avatarInitials}>{initials(displayName)}</Text>
             </View>
           )}
           <View style={s.cameraOverlay}>
             {avatarUploading
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Ionicons name="camera" size={14} color="#fff" />}
+              : <Ionicons name="camera" size={12} color="#fff" />}
           </View>
         </TouchableOpacity>
-        <Text style={s.displayName}>{profile?.displayName ?? 'Tu perfil'}</Text>
-        <Text style={s.email}>{me?.email}</Text>
-        <View style={s.levelBadge}>
-          <Text style={s.levelText}>{LEVEL_LABELS[profile?.level] ?? 'Principiante'}</Text>
-        </View>
+
+        <Text style={s.heroName}>{displayName}</Text>
+        <Text style={s.heroSub}>
+          {division ? `Categoría: ${division} · ` : ''}
+          {levelLabel}
+        </Text>
+
+        {/* Ranking badge */}
+        {rank && (
+          <View style={s.rankBadge}>
+            <Ionicons name="trophy" size={13} color="#0a0f1a" />
+            <Text style={s.rankBadgeText}>Ranking #{rank}</Text>
+          </View>
+        )}
       </View>
 
-      {/* canTransact=false restriction banner */}
-      {profile && profile.canTransact === false && (
+      {/* canTransact restriction */}
+      {profile?.canTransact === false && (
         <View style={s.restrictionBanner}>
-          <Ionicons name="lock-closed-outline" size={18} color="#b45309" />
+          <Ionicons name="lock-closed-outline" size={16} color="#d97706" />
           <Text style={s.restrictionText}>
             Esta cuenta no puede realizar transacciones. Contacta a un tutor o al staff del club.
           </Text>
         </View>
       )}
 
-      {/* Stats */}
+      {/* Datos competitivos grid */}
       <View style={s.statsRow}>
         {[
-          { label: 'Partidos', value: stats?.matchesPlayed ?? 0 },
-          { label: 'Victorias', value: stats?.wins ?? 0 },
-          { label: 'Puntos', value: stats?.rankingPoints ?? 0 },
+          { label: 'Partidos', value: stats?.matchesPlayed ?? myStats?.matchesPlayed ?? 0 },
+          { label: 'Victorias', value: stats?.wins ?? myStats?.wins ?? 0 },
+          { label: 'Puntos',   value: rankingEntry?.totalPoints ?? stats?.rankingPoints ?? 0 },
         ].map(({ label, value }) => (
-          <View key={label} style={s.statItem}>
-            <Text style={s.statValue}>{value}</Text>
+          <View key={label} style={s.statCell}>
+            <Text style={s.statValue}>{typeof value === 'number' ? value.toLocaleString('es-CL') : value}</Text>
             <Text style={s.statLabel}>{label}</Text>
           </View>
         ))}
       </View>
 
+      {/* Public stats card */}
       {myStats?.statsCard && (
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Mi tarjeta pública</Text>
-          <View style={s.publicCard}>
-            <Text style={s.publicCardTitle}>{myStats.statsCard.title}</Text>
-            <Text style={s.publicCardSub}>
-              {myStats.statsCard.summary.matchesPlayed} partidos · {myStats.statsCard.summary.wins} victorias · {myStats.statsCard.summary.rankingPoints} puntos
+        <Section title="Mi tarjeta pública">
+          <View style={s.card}>
+            <Text style={s.cardTitle}>{myStats.statsCard.title}</Text>
+            <Text style={s.cardSub}>
+              {myStats.statsCard.summary.matchesPlayed} partidos · {myStats.statsCard.summary.wins} victorias · {myStats.statsCard.summary.rankingPoints} pts
             </Text>
-            <TouchableOpacity style={s.publicCardBtn} onPress={() => router.push(`/player/${me?.id}` as any)}>
-              <Ionicons name="open-outline" size={16} color="#16a34a" />
-              <Text style={s.publicCardBtnText}>Abrir vista pública y compartir</Text>
+            <TouchableOpacity style={s.cardLink} onPress={() => router.push(`/player/${me?.id}` as any)}>
+              <Ionicons name="open-outline" size={14} color={GOLD} />
+              <Text style={s.cardLinkText}>Abrir vista pública y compartir</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Section>
       )}
 
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Mis membresías</Text>
+      {/* Memberships */}
+      <Section title="Mis membresías">
         {memberships.length === 0 ? (
           <View style={s.noClubCard}>
             <View style={s.noClubIconWrap}>
-              <Ionicons name="business-outline" size={26} color="#1b4a86" />
+              <Ionicons name="business-outline" size={24} color={GOLD} />
             </View>
             <Text style={s.noClubTitle}>Aún no eres parte de un club</Text>
-            <Text style={s.noClubSub}>
-              Explora clubes, sigue los que te interesan o gestiona cómo te contactamos.
-            </Text>
-            <View style={s.noClubActions}>
-              <TouchableOpacity
-                style={s.noClubPrimary}
-                onPress={() => router.push('/(tabs)/explore' as any)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="search" size={16} color="#fff" />
-                <Text style={s.noClubPrimaryText}>Explorar clubes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.noClubSecondary}
-                onPress={() => router.push('/favorites' as any)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="heart-outline" size={16} color="#1b4a86" />
-                <Text style={s.noClubSecondaryText}>Mis favoritos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.noClubSecondary}
-                onPress={() => router.push('/notifications-settings' as any)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="options-outline" size={16} color="#1b4a86" />
-                <Text style={s.noClubSecondaryText}>Notificaciones</Text>
+            <Text style={s.noClubSub}>Explora clubes y solicita tu membresía.</Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              <TouchableOpacity style={s.noClubBtn} onPress={() => router.push('/(tabs)/explore' as any)}>
+                <Ionicons name="search" size={14} color="#0a0f1a" />
+                <Text style={s.noClubBtnText}>Explorar clubes</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ) : memberships.map((membership: any) => (
-          <View key={membership.id} style={s.membershipCard}>
+        ) : memberships.map((m: any) => (
+          <View key={m.id} style={s.memberRow}>
             <View style={{ flex: 1 }}>
-              <Text style={s.membershipTitle}>{membership.club?.name}</Text>
-              <Text style={s.membershipSub}>
-                {membership.plan?.name} · {membership.status === 'ACTIVE' ? 'Activa' : membership.status}
-              </Text>
-              {membership.endDate && (
-                <Text style={s.membershipMeta}>
-                  Vigente hasta {new Date(membership.endDate).toLocaleDateString('es-CL')}
-                </Text>
-              )}
-              {membership.resolvedPaymentInstructions && (
-                <Text style={s.membershipInstructions}>{membership.resolvedPaymentInstructions}</Text>
-              )}
+              <Text style={s.memberTitle}>{m.club?.name}</Text>
+              <Text style={s.memberSub}>{m.plan?.name} · {m.status === 'ACTIVE' ? 'Activa' : m.status}</Text>
+              {m.endDate && <Text style={s.memberMeta}>Vigente hasta {new Date(m.endDate).toLocaleDateString('es-CL')}</Text>}
+              {m.resolvedPaymentInstructions && <Text style={s.memberInstructions}>{m.resolvedPaymentInstructions}</Text>}
             </View>
-            <View style={[
-              s.membershipBadge,
-              membership.status === 'ACTIVE' ? s.membershipBadgeActive : s.membershipBadgeInactive,
-            ]}>
-              <Text style={[
-                s.membershipBadgeText,
-                membership.status === 'ACTIVE' ? s.membershipBadgeTextActive : s.membershipBadgeTextInactive,
-              ]}>
-                {membership.status === 'ACTIVE' ? 'Activa' : membership.status}
+            <View style={[s.memberBadge, m.status === 'ACTIVE' ? s.memberBadgeActive : s.memberBadgeInactive]}>
+              <Text style={[s.memberBadgeText, { color: m.status === 'ACTIVE' ? GREEN : SUB }]}>
+                {m.status === 'ACTIVE' ? 'Activa' : m.status}
               </Text>
             </View>
           </View>
         ))}
 
-        {membershipRequests.length > 0 && (
-          <View style={{ marginTop: 10 }}>
-            <Text style={s.sectionTitle}>Solicitudes enviadas</Text>
-            {membershipRequests.map((request: any) => (
-              <View key={request.id} style={s.membershipCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.membershipTitle}>{request.club?.name}</Text>
-                  <Text style={s.membershipSub}>{request.plan?.name}</Text>
-                  {request.denialReason && (
-                    <Text style={s.membershipMeta}>Motivo: {request.denialReason}</Text>
-                  )}
-                </View>
-                <Text style={s.requestStatus}>
-                  {request.status === 'PENDING' ? 'Pendiente' : request.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'}
-                </Text>
-              </View>
-            ))}
+        {membershipRequests.length > 0 && membershipRequests.map((r: any) => (
+          <View key={r.id} style={[s.memberRow, { marginTop: 6 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.memberTitle}>{r.club?.name}</Text>
+              <Text style={s.memberSub}>{r.plan?.name}</Text>
+              {r.denialReason && <Text style={s.memberMeta}>Motivo: {r.denialReason}</Text>}
+            </View>
+            <Text style={[s.memberBadgeText, { color: r.status === 'PENDING' ? GOLD : r.status === 'APPROVED' ? GREEN : RED }]}>
+              {r.status === 'PENDING' ? 'Pendiente' : r.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'}
+            </Text>
           </View>
-        )}
-      </View>
+        ))}
+      </Section>
 
-      {/* Upcoming reservations */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Mis reservas recientes</Text>
-        {myReservations?.data?.length === 0 ? (
+      {/* Reservas recientes */}
+      <Section title="Mis reservas recientes">
+        {!myReservations?.data?.length ? (
           <Text style={s.emptyText}>Sin reservas</Text>
-        ) : (
-          myReservations?.data?.slice(0, 3).map((r: any) => (
-            <View key={r.id} style={s.itemCard}>
-              <View style={s.itemIcon}>
-                <Ionicons name="tennisball-outline" size={18} color="#16a34a" />
-              </View>
-              <View style={s.itemInfo}>
-                <Text style={s.itemTitle}>{r.court?.name}</Text>
-                <Text style={s.itemSub}>
-                  {new Date(r.startTime).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}
-                  {' · '}{new Date(r.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              </View>
-              <View style={[s.statusDot, { backgroundColor: r.status === 'CONFIRMED' ? '#16a34a' : '#d97706' }]} />
+        ) : myReservations.data.slice(0, 3).map((r: any) => (
+          <View key={r.id} style={s.itemRow}>
+            <View style={s.itemIcon}><Ionicons name="tennisball-outline" size={18} color={GREEN} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.itemTitle}>{r.court?.name}</Text>
+              <Text style={s.itemSub}>
+                {new Date(r.startTime).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}
+                {' · '}{new Date(r.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
             </View>
-          ))
-        )}
-      </View>
+            <View style={[s.statusDot, { backgroundColor: r.status === 'CONFIRMED' ? GREEN : '#d97706' }]} />
+          </View>
+        ))}
+      </Section>
 
-      {/* Match Log */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Registro personal</Text>
-        <TouchableOpacity style={s.menuItem} onPress={() => router.push('/match-log' as any)} activeOpacity={0.7}>
-          <Ionicons name="clipboard-outline" size={20} color="#7c3aed" />
-          <Text style={s.menuLabel}>Mi registro de partidos</Text>
-          <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
-        </TouchableOpacity>
-      </View>
+      {/* Registro personal */}
+      <Section title="Registro personal">
+        <MenuItem icon="clipboard-outline" label="Mi registro de partidos" onPress={() => router.push('/match-log' as any)} />
+      </Section>
 
-
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>National Ranking (RUN)</Text>
+      {/* RUN */}
+      <Section title="National Ranking (RUN)">
         {profile?.runPlayerId ? (
-          <View style={s.runCard}>
-            <Text style={s.runLabel}>Perfil vinculado: #{profile.runPlayerId}</Text>
-            <View style={s.runStatsRow}>
-              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runRankCached ?? '?'}</Text><Text style={s.runStatLabel}>RUN</Text></View>
-              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runPointsCached ?? '?'}</Text><Text style={s.runStatLabel}>Puntos</Text></View>
-              <View style={s.runStat}><Text style={s.runStatValue}>{profile.runAtpPointsCached ?? '?'}</Text><Text style={s.runStatLabel}>ATP</Text></View>
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Perfil vinculado: #{profile.runPlayerId}</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              {[
+                { v: profile.runRankCached ?? '?', l: 'RUN' },
+                { v: profile.runPointsCached ?? '?', l: 'Puntos' },
+                { v: profile.runAtpPointsCached ?? '?', l: 'ATP' },
+              ].map(({ v, l }) => (
+                <View key={l} style={s.runStat}>
+                  <Text style={s.runStatValue}>{v}</Text>
+                  <Text style={s.runStatLabel}>{l}</Text>
+                </View>
+              ))}
             </View>
-            <Text style={s.runHint}>?ltima actualizaci?n: {profile.runLastSyncedAt ? new Date(profile.runLastSyncedAt).toLocaleString('es-CL') : 'Sin sincronizar'}</Text>
+            <Text style={s.cardSub}>Última sincronización: {profile.runLastSyncedAt ? new Date(profile.runLastSyncedAt).toLocaleString('es-CL') : 'Sin sincronizar'}</Text>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <TouchableOpacity style={s.runRefreshBtn} onPress={() => refreshRun.mutate()} disabled={refreshRun.isPending}>
-                <Text style={s.runRefreshText}>{refreshRun.isPending ? 'Actualizando...' : 'Actualizar RUN'}</Text>
+              <TouchableOpacity style={s.runBtn} onPress={() => refreshRun.mutate()} disabled={refreshRun.isPending}>
+                <Text style={s.runBtnText}>{refreshRun.isPending ? 'Actualizando...' : 'Actualizar RUN'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.runUnlinkBtn} onPress={() => unlinkRun.mutate()} disabled={unlinkRun.isPending}>
-                <Text style={s.runUnlinkText}>Desvincular</Text>
+              <TouchableOpacity style={s.runBtnAlt} onPress={() => unlinkRun.mutate()} disabled={unlinkRun.isPending}>
+                <Text style={s.runBtnAltText}>Desvincular</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <View style={s.runCard}>
-            <Text style={s.runHint}>Pega tu URL o ID de perfil p?blico de TenisChile.</Text>
+          <View style={s.card}>
+            <Text style={s.cardSub}>Pega tu URL o ID de perfil público de TenisChile.</Text>
             <TextInput
-              style={s.disableInput}
+              style={s.input}
               value={runValue}
               onChangeText={setRunValue}
               placeholder="https://www.tenischile.com/jugador/..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={SUB}
             />
-            <TouchableOpacity style={s.runRefreshBtn} onPress={() => linkRun.mutate(runValue)} disabled={!runValue || linkRun.isPending}>
-              <Text style={s.runRefreshText}>{linkRun.isPending ? 'Vinculando...' : 'Vincular RUN'}</Text>
+            <TouchableOpacity style={[s.runBtn, { marginTop: 0 }]} onPress={() => linkRun.mutate(runValue)} disabled={!runValue || linkRun.isPending}>
+              <Text style={s.runBtnText}>{linkRun.isPending ? 'Vinculando...' : 'Vincular RUN'}</Text>
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </Section>
 
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Mi Club</Text>
-        <TouchableOpacity style={s.menuItem} onPress={() => router.push('/club-ranking' as any)} activeOpacity={0.7}>
-          <Ionicons name="podium-outline" size={20} color="#16a34a" />
-          <Text style={s.menuLabel}>Ver ranking interno del club</Text>
-          <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
-        </TouchableOpacity>
-      </View>
+      {/* Mi Club links */}
+      <Section title="Mi Club">
+        <MenuItem icon="podium-outline" label="Ver ranking interno del club" onPress={() => router.push('/torneos/ranking' as any)} />
+        <MenuItem icon="trophy-outline" label="Ir a Torneos" onPress={() => router.push('/(tabs)/tournaments' as any)} />
+      </Section>
 
-      {/* My Children (parent delegation) */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Mis hijos vinculados</Text>
-        <View style={s.childLinkForm}>
+      {/* Mis hijos */}
+      <Section title="Mis hijos vinculados">
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
           <TextInput
-            style={s.childRutInput}
+            style={[s.input, { flex: 1 }]}
             value={childRut}
             onChangeText={setChildRut}
             placeholder="RUT del menor (ej: 12.345.678-9)"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={SUB}
             autoCapitalize="none"
           />
           <TouchableOpacity
-            style={[s.childLinkBtn, (!childRut.trim() || requestingLink) && { opacity: 0.5 }]}
+            style={[s.runBtn, { marginTop: 0, paddingHorizontal: 14 }, (!childRut.trim() || requestingLink) && { opacity: 0.5 }]}
             onPress={handleRequestLink}
             disabled={!childRut.trim() || requestingLink}
           >
             {requestingLink
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.childLinkBtnText}>Solicitar</Text>}
+              ? <ActivityIndicator color="#0a0f1a" size="small" />
+              : <Text style={s.runBtnText}>Solicitar</Text>}
           </TouchableOpacity>
         </View>
-
         {myChildren.length === 0 ? (
           <Text style={s.emptyText}>Sin hijos vinculados</Text>
         ) : myChildren.map((c: any) => {
-          const statusColor = c.status === 'APPROVED' ? '#16a34a' : c.status === 'PENDING' ? '#d97706' : '#dc2626';
-          const statusLabel = c.status === 'APPROVED' ? 'Aprobado' : c.status === 'PENDING' ? 'Pendiente' : 'Rechazado';
+          const sColor = c.status === 'APPROVED' ? GREEN : c.status === 'PENDING' ? GOLD : RED;
+          const sLabel = c.status === 'APPROVED' ? 'Aprobado' : c.status === 'PENDING' ? 'Pendiente' : 'Rechazado';
           return (
-            <View key={c.linkId} style={s.childCard}>
-              <View style={s.childInfo}>
-                <Text style={s.childName}>{c.child.profile?.displayName ?? c.child.email}</Text>
-                <Text style={s.childSub}>{c.club?.name}</Text>
+            <View key={c.linkId} style={s.itemRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.itemTitle}>{c.child.profile?.displayName ?? c.child.email}</Text>
+                <Text style={s.itemSub}>{c.club?.name}</Text>
                 {c.status === 'APPROVED' && c.child.profile?.canTransact === false && (
-                  <Text style={s.childRestricted}>Transacciones bloqueadas</Text>
+                  <Text style={{ fontSize: 11, color: RED, marginTop: 2 }}>Transacciones bloqueadas</Text>
                 )}
               </View>
-              <Text style={[s.childStatus, { color: statusColor }]}>{statusLabel}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: sColor }}>{sLabel}</Text>
             </View>
           );
         })}
-      </View>
+      </Section>
 
-      {/* Menu */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Mi cuenta</Text>
+      {/* Mi cuenta */}
+      <Section title="Mi cuenta">
         {[
-          { label: 'Cambiar foto', icon: 'camera-outline', onPress: handleAvatarPress },
-          { label: 'Mis pagos', icon: 'card-outline', onPress: () => {} },
-          { label: 'Mis membresías', icon: 'shield-checkmark-outline', onPress: () => {} },
-          { label: 'Mis favoritos', icon: 'heart-outline', onPress: () => router.push('/favorites' as any) },
-          { label: 'Preferencias de notificaciones', icon: 'options-outline', onPress: () => router.push('/notifications-settings' as any) },
-          { label: 'Notificaciones', icon: 'notifications-outline', onPress: () => router.push('/notifications' as any) },
+          { label: 'Cambiar foto',                    icon: 'camera-outline',             onPress: handleAvatarPress },
+          { label: 'Mis pagos',                       icon: 'card-outline',               onPress: () => {} },
+          { label: 'Mis favoritos',                   icon: 'heart-outline',              onPress: () => router.push('/favorites' as any) },
+          { label: 'Preferencias de notificaciones',  icon: 'options-outline',            onPress: () => router.push('/notifications-settings' as any) },
+          { label: 'Notificaciones',                  icon: 'notifications-outline',      onPress: () => router.push('/notifications' as any) },
         ].map(({ label, icon, onPress }) => (
-          <TouchableOpacity key={label} style={s.menuItem} onPress={onPress} activeOpacity={0.7}>
-            <Ionicons name={icon as any} size={20} color="#374151" />
-            <Text style={s.menuLabel}>{label}</Text>
-            <Ionicons name="chevron-forward" size={16} color="#d1d5db" style={{ marginLeft: 'auto' }} />
-          </TouchableOpacity>
+          <MenuItem key={label} icon={icon as any} label={label} onPress={onPress} />
         ))}
-      </View>
+      </Section>
 
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Privacidad</Text>
+      {/* Privacidad */}
+      <Section title="Privacidad">
         {[
-          {
-            key: 'publicVisibility',
-            label: 'Perfil público',
-            value: !!profile?.publicVisibility,
-            hint: 'Permite que otros jugadores encuentren tu perfil público.',
-          },
-          {
-            key: 'shareStatsWithClub',
-            label: 'Compartir stats con mi club',
-            value: !!profile?.shareStatsWithClub,
-            hint: 'Controla las estadísticas detalladas visibles para staff del club.',
-          },
-          {
-            key: 'shareStatsWithPlayers',
-            label: 'Compartir stats con jugadores',
-            value: !!profile?.shareStatsWithPlayers,
-            hint: 'Controla la tarjeta pública y las estadísticas visibles para otros jugadores.',
-          },
+          { key: 'publicVisibility',      label: 'Perfil público',                   value: !!profile?.publicVisibility,      hint: 'Permite que otros jugadores encuentren tu perfil.' },
+          { key: 'shareStatsWithClub',    label: 'Compartir stats con mi club',      value: !!profile?.shareStatsWithClub,    hint: 'Estadísticas visibles para staff del club.' },
+          { key: 'shareStatsWithPlayers', label: 'Compartir stats con jugadores',    value: !!profile?.shareStatsWithPlayers, hint: 'Tarjeta pública visible para otros jugadores.' },
         ].map(item => (
           <View key={item.key} style={s.privacyItem}>
             <View style={{ flex: 1 }}>
-              <Text style={s.privacyLabel}>{item.label}</Text>
-              <Text style={s.privacyHint}>{item.hint}</Text>
+              <Text style={s.itemTitle}>{item.label}</Text>
+              <Text style={s.itemSub}>{item.hint}</Text>
             </View>
             <Switch
               value={item.value}
               onValueChange={next => updateVisibility.mutate({ [item.key]: next })}
-              trackColor={{ false: '#d1d5db', true: '#16a34a' }}
+              trackColor={{ false: BORDER, true: GOLD }}
               disabled={updateVisibility.isPending}
             />
           </View>
         ))}
-      </View>
+      </Section>
 
-      {/* 2FA section */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Seguridad</Text>
-        <View style={s.menuItem}>
-          <Ionicons name="shield-outline" size={20} color="#374151" />
-          <Text style={s.menuLabel}>Verificación en 2 pasos</Text>
+      {/* Seguridad */}
+      <Section title="Seguridad">
+        <View style={s.itemRow}>
+          <View style={s.itemIcon}><Ionicons name="shield-outline" size={18} color={GOLD} /></View>
+          <Text style={[s.itemTitle, { flex: 1 }]}>Verificación en 2 pasos</Text>
           <Switch
-            style={{ marginLeft: 'auto' }}
             value={!!me?.twoFactorEnabled}
             onValueChange={val => {
               if (val) {
-                Alert.alert('Activar 2FA', 'Se enviará un código a tu email para verificar. ¿Continuar?', [
+                Alert.alert('Activar 2FA', 'Se enviará un código a tu email. ¿Continuar?', [
                   { text: 'Cancelar', style: 'cancel' },
                   { text: 'Activar', onPress: () => enable2FA.mutate() },
                 ]);
@@ -526,159 +475,225 @@ export default function ProfileScreen() {
                 setShow2FADisable(true);
               }
             }}
-            trackColor={{ false: '#d1d5db', true: '#16a34a' }}
+            trackColor={{ false: BORDER, true: GOLD }}
             disabled={enable2FA.isPending}
           />
         </View>
         {show2FADisable && (
-          <View style={s.disableForm}>
-            <Text style={s.disableHint}>Ingresa tu contraseña para desactivar 2FA:</Text>
+          <View style={s.formBox}>
+            <Text style={s.formHint}>Ingresa tu contraseña para desactivar 2FA:</Text>
             <TextInput
-              style={s.disableInput}
+              style={s.input}
               value={disablePassword}
               onChangeText={setDisablePassword}
               placeholder="Contraseña"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={SUB}
               secureTextEntry
             />
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity style={s.disableCancelBtn} onPress={() => { setShow2FADisable(false); setDisablePassword(''); }}>
-                <Text style={s.disableCancelText}>Cancelar</Text>
+              <TouchableOpacity style={s.formCancelBtn} onPress={() => { setShow2FADisable(false); setDisablePassword(''); }}>
+                <Text style={s.formCancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.disableConfirmBtn, disable2FA.isPending && { opacity: 0.6 }]}
+                style={[s.formConfirmBtn, disable2FA.isPending && { opacity: 0.6 }]}
                 onPress={() => disable2FA.mutate(disablePassword)}
                 disabled={!disablePassword || disable2FA.isPending}
               >
-                {disable2FA.isPending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.disableConfirmText}>Confirmar</Text>}
+                {disable2FA.isPending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.formConfirmText}>Confirmar</Text>}
               </TouchableOpacity>
             </View>
           </View>
         )}
-      </View>
+      </Section>
 
+      {/* Logout */}
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+        <Ionicons name="log-out-outline" size={20} color={RED} />
         <Text style={s.logoutText}>Cerrar sesión</Text>
       </TouchableOpacity>
 
-      <View style={{ height: 40 }} />
+      <View style={{ height: 48 }} />
     </ScrollView>
   );
 }
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function MenuItem({ icon, label, onPress }: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={s.menuItem} onPress={onPress} activeOpacity={0.7}>
+      <View style={s.menuIconWrap}><Ionicons name={icon} size={18} color={GOLD} /></View>
+      <Text style={s.menuLabel}>{label}</Text>
+      <Ionicons name="chevron-forward" size={16} color={SUB} />
+    </TouchableOpacity>
+  );
+}
+
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  profileHeader: { backgroundColor: '#16a34a', alignItems: 'center', paddingTop: 60, paddingBottom: 28, paddingHorizontal: 20 },
-  avatarWrapper: { position: 'relative', marginBottom: 12 },
-  avatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)' },
-  avatarLarge: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.25)',
+  container: { flex: 1, backgroundColor: BG },
+
+  heroCard: {
+    alignItems: 'center', paddingTop: 60, paddingBottom: 28, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  avatarWrapper: { position: 'relative', marginBottom: 14 },
+  avatarImage: { width: 84, height: 84, borderRadius: 42, borderWidth: 2, borderColor: GOLD },
+  avatarCircle: {
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: '#1a2235', borderWidth: 2, borderColor: GOLD,
     justifyContent: 'center', alignItems: 'center',
   },
-  avatarText: { fontSize: 32, fontWeight: '800', color: '#fff' },
+  avatarInitials: { fontSize: 30, fontWeight: '800', color: GOLD },
   cameraOverlay: {
     position: 'absolute', bottom: 0, right: 0,
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#16a34a',
+    backgroundColor: '#1f2937', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1.5, borderColor: GOLD,
   },
-  displayName: { fontSize: 22, fontWeight: '800', color: '#fff' },
-  email: { fontSize: 14, color: '#bbf7d0', marginTop: 4 },
-  levelBadge: { marginTop: 10, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20 },
-  levelText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  statsRow: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  statItem: { flex: 1, alignItems: 'center', paddingVertical: 18, borderRightWidth: 1, borderRightColor: '#f3f4f6' },
-  statValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
-  statLabel: { fontSize: 12, color: '#6b7280', marginTop: 3 },
-  section: { margin: 16, marginTop: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  publicCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  publicCardTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  publicCardSub: { fontSize: 13, color: '#6b7280', marginTop: 6 },
-  publicCardBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, alignSelf: 'flex-start' },
-  publicCardBtnText: { fontSize: 13, fontWeight: '700', color: '#16a34a' },
-  privacyItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  privacyLabel: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  privacyHint: { fontSize: 12, color: '#6b7280', marginTop: 4, lineHeight: 18 },
-  itemCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  itemIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#f0fdf4', justifyContent: 'center', alignItems: 'center' },
-  itemInfo: { flex: 1 },
-  itemTitle: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  itemSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  menuLabel: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, padding: 14, borderRadius: 12, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', marginBottom: 8 },
-  logoutText: { fontSize: 15, color: '#dc2626', fontWeight: '600' },
-  emptyText: { color: '#9ca3af', fontSize: 14, textAlign: 'center', paddingVertical: 12 },
-  disableForm: { backgroundColor: '#fef2f2', borderRadius: 12, padding: 14, marginTop: 8, gap: 10 },
-  disableHint: { fontSize: 13, color: '#374151' },
-  disableInput: { borderWidth: 1, borderColor: '#fecaca', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#111827', backgroundColor: '#fff' },
-  disableCancelBtn: { flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, paddingVertical: 10, alignItems: 'center', backgroundColor: '#fff' },
-  disableCancelText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  disableConfirmBtn: { flex: 1, backgroundColor: '#dc2626', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  disableConfirmText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  runCard: { backgroundColor: '#fff', borderRadius: 14, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  runLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  runHint: { fontSize: 13, color: '#6b7280', marginTop: 6 },
-  runStatsRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  runStat: { flex: 1, backgroundColor: '#f0fdf4', borderRadius: 12, padding: 12, alignItems: 'center' },
-  runStatValue: { fontSize: 20, fontWeight: '800', color: '#166534' },
-  runStatLabel: { fontSize: 12, color: '#166534', marginTop: 3 },
-  runRefreshBtn: { marginTop: 12, backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 11, alignItems: 'center', flex: 1 },
-  runRefreshText: { color: '#fff', fontWeight: '700' },
-  runUnlinkBtn: { marginTop: 12, backgroundColor: '#fff5f5', borderRadius: 10, paddingVertical: 11, alignItems: 'center', flex: 1, borderWidth: 1, borderColor: '#fecaca' },
-  runUnlinkText: { color: '#dc2626', fontWeight: '700' },
-  restrictionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fffbeb', borderLeftWidth: 4, borderLeftColor: '#d97706', marginHorizontal: 0, paddingHorizontal: 14, paddingVertical: 12 },
-  restrictionText: { flex: 1, fontSize: 13, color: '#92400e', lineHeight: 18 },
-  childLinkForm: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  childRutInput: { flex: 1, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#111827', backgroundColor: '#fff' },
-  childLinkBtn: { backgroundColor: '#16a34a', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
-  childLinkBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  childCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  childInfo: { flex: 1 },
-  childName: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  childSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-  childRestricted: { fontSize: 11, color: '#dc2626', marginTop: 3, fontWeight: '600' },
-  childStatus: { fontSize: 12, fontWeight: '700' },
-  membershipCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, elevation: 2 },
-  membershipTitle: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  membershipSub: { fontSize: 12, color: '#374151', marginTop: 3 },
-  membershipMeta: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  membershipInstructions: { fontSize: 12, color: '#166534', marginTop: 6, lineHeight: 17 },
-  membershipBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  membershipBadgeActive: { backgroundColor: '#dcfce7' },
-  membershipBadgeInactive: { backgroundColor: '#f3f4f6' },
-  membershipBadgeText: { fontSize: 11, fontWeight: '700' },
-  membershipBadgeTextActive: { color: '#166534' },
-  membershipBadgeTextInactive: { color: '#4b5563' },
-  requestStatus: { fontSize: 12, fontWeight: '700', color: '#6b7280' },
-  /* No-club-yet card */
+  heroName: { fontSize: 22, fontWeight: '800', color: TEXT, marginBottom: 4 },
+  heroSub: { fontSize: 13, color: SUB, marginBottom: 12 },
+  rankBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: GOLD, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
+  },
+  rankBadgeText: { fontSize: 13, fontWeight: '800', color: '#0a0f1a' },
+
+  restrictionBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#1a1400', borderLeftWidth: 3, borderLeftColor: '#d97706',
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  restrictionText: { flex: 1, fontSize: 12, color: '#d97706', lineHeight: 17 },
+
+  statsRow: {
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  statCell: {
+    flex: 1, alignItems: 'center', paddingVertical: 18,
+    borderRightWidth: 1, borderRightColor: BORDER,
+  },
+  statValue: { fontSize: 22, fontWeight: '800', color: TEXT },
+  statLabel: { fontSize: 12, color: SUB, marginTop: 3 },
+
+  section: { margin: 16, marginTop: 14, gap: 10 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: TEXT },
+
+  card: {
+    backgroundColor: CARD, borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: BORDER, gap: 8,
+  },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: TEXT },
+  cardSub: { fontSize: 12, color: SUB, lineHeight: 18 },
+  cardLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  cardLinkText: { fontSize: 13, fontWeight: '700', color: GOLD },
+
   noClubCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 18,
-    alignItems: 'flex-start', gap: 10,
-    borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'dashed',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+    backgroundColor: CARD, borderRadius: 14, padding: 16, gap: 8,
+    borderWidth: 1, borderColor: BORDER,
   },
   noClubIconWrap: {
-    width: 48, height: 48, borderRadius: 14, backgroundColor: '#eff6ff',
-    justifyContent: 'center', alignItems: 'center',
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: '#1a2235', justifyContent: 'center', alignItems: 'center',
   },
-  noClubTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  noClubSub: { fontSize: 13, color: '#6b7280', lineHeight: 19 },
-  noClubActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
-  noClubPrimary: {
+  noClubTitle: { fontSize: 15, fontWeight: '700', color: TEXT },
+  noClubSub: { fontSize: 13, color: SUB },
+  noClubBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1b4a86', paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 10,
+    backgroundColor: GOLD, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10,
   },
-  noClubPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  noClubSecondary: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 10,
+  noClubBtnText: { fontSize: 13, fontWeight: '700', color: '#0a0f1a' },
+
+  memberRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: CARD, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
   },
-  noClubSecondaryText: { color: '#1b4a86', fontSize: 13, fontWeight: '700' },
+  memberTitle: { fontSize: 14, fontWeight: '700', color: TEXT },
+  memberSub: { fontSize: 12, color: SUB, marginTop: 3 },
+  memberMeta: { fontSize: 12, color: SUB, marginTop: 3 },
+  memberInstructions: { fontSize: 12, color: GREEN, marginTop: 4, lineHeight: 17 },
+  memberBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  memberBadgeActive: { backgroundColor: GREEN + '22' },
+  memberBadgeInactive: { backgroundColor: '#1f2937' },
+  memberBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  itemRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: CARD, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  itemIcon: {
+    width: 34, height: 34, borderRadius: 9,
+    backgroundColor: '#1a2235', justifyContent: 'center', alignItems: 'center',
+  },
+  itemTitle: { fontSize: 14, fontWeight: '600', color: TEXT },
+  itemSub: { fontSize: 12, color: SUB, marginTop: 2 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: CARD, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  menuIconWrap: {
+    width: 34, height: 34, borderRadius: 9,
+    backgroundColor: '#1a2235', justifyContent: 'center', alignItems: 'center',
+  },
+  menuLabel: { flex: 1, fontSize: 14, fontWeight: '600', color: TEXT },
+
+  privacyItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: CARD, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+
+  input: {
+    borderWidth: 1, borderColor: BORDER, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 11,
+    fontSize: 14, color: TEXT, backgroundColor: '#0d1526',
+  },
+  formBox: { backgroundColor: '#160c0c', borderRadius: 12, padding: 14, gap: 10 },
+  formHint: { fontSize: 13, color: SUB },
+  formCancelBtn: {
+    flex: 1, borderWidth: 1, borderColor: BORDER, borderRadius: 8,
+    paddingVertical: 10, alignItems: 'center', backgroundColor: CARD,
+  },
+  formCancelText: { fontSize: 13, fontWeight: '600', color: TEXT },
+  formConfirmBtn: { flex: 1, backgroundColor: RED, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  formConfirmText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  runStat: {
+    flex: 1, backgroundColor: '#1a2235', borderRadius: 10, padding: 10, alignItems: 'center',
+  },
+  runStatValue: { fontSize: 20, fontWeight: '800', color: GOLD },
+  runStatLabel: { fontSize: 11, color: SUB, marginTop: 2 },
+  runBtn: {
+    backgroundColor: GOLD, borderRadius: 10, paddingVertical: 11,
+    alignItems: 'center', flex: 1, paddingHorizontal: 8,
+  },
+  runBtnText: { color: '#0a0f1a', fontWeight: '700', fontSize: 13 },
+  runBtnAlt: {
+    backgroundColor: '#160c0c', borderRadius: 10, paddingVertical: 11,
+    alignItems: 'center', flex: 1, borderWidth: 1, borderColor: RED,
+  },
+  runBtnAltText: { color: RED, fontWeight: '700', fontSize: 13 },
+
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 16, padding: 14, borderRadius: 12,
+    backgroundColor: '#160c0c', borderWidth: 1, borderColor: '#2d1414',
+  },
+  logoutText: { fontSize: 14, color: RED, fontWeight: '700' },
+  emptyText: { color: SUB, fontSize: 13, textAlign: 'center', paddingVertical: 8 },
 });

@@ -2,15 +2,24 @@ import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { format, addDays, startOfWeek } from 'date-fns';
+import {
+  format, addDays, startOfMonth, endOfMonth, eachDayOfInterval,
+  startOfWeek, isSameMonth, isSameDay,
+} from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 
+const BG = '#0a0f1a'; const CARD = '#111827'; const GOLD = '#d4a017';
+const GREEN = '#22c55e'; const TEXT = '#f9fafb'; const SUB = '#9ca3af';
+const BORDER = '#1f2937';
+
+const DAY_HEADERS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+
 export default function CalendarScreen() {
+  const [viewMonth, setViewMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   const { data: calendar, isLoading } = useQuery({
     queryKey: ['calendar-user', selectedDate.toISOString().split('T')[0]],
@@ -24,7 +33,30 @@ export default function CalendarScreen() {
     },
   });
 
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  /* All events fetched for the month (for dot indicators) */
+  const { data: monthCalendar } = useQuery({
+    queryKey: ['calendar-month', format(viewMonth, 'yyyy-MM')],
+    queryFn: async () => {
+      const from = startOfMonth(viewMonth);
+      const to = endOfMonth(viewMonth);
+      const { data } = await api.get(`/calendar/user?from=${from.toISOString()}&to=${to.toISOString()}`);
+      return data;
+    },
+  });
+
+  const allMonthEvents = [
+    ...(monthCalendar?.reservations ?? []),
+    ...(monthCalendar?.matches ?? []),
+    ...(monthCalendar?.tournaments ?? []),
+  ];
+
+  const datesWithEvents = new Set(
+    allMonthEvents.map((e: any) => {
+      const d = e.startTime ?? e.scheduledTime ?? e.startDate;
+      return d ? new Date(d).toDateString() : null;
+    }).filter(Boolean),
+  );
+
   const allEvents = [
     ...(calendar?.reservations ?? []),
     ...(calendar?.matches ?? []),
@@ -32,45 +64,100 @@ export default function CalendarScreen() {
   ].sort((a, b) => new Date(a.startTime ?? a.startDate ?? a.scheduledTime).getTime()
     - new Date(b.startTime ?? b.startDate ?? b.scheduledTime).getTime());
 
+  /* Build month grid */
+  const monthStart = startOfMonth(viewMonth);
+  const monthEnd = endOfMonth(viewMonth);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+  const gridDays = eachDayOfInterval({ start: gridStart, end: addDays(monthEnd, (6 - monthEnd.getDay() + 7) % 7) });
+
+  const prevMonth = () => {
+    const d = new Date(viewMonth);
+    d.setMonth(d.getMonth() - 1);
+    setViewMonth(d);
+  };
+  const nextMonth = () => {
+    const d = new Date(viewMonth);
+    d.setMonth(d.getMonth() + 1);
+    setViewMonth(d);
+  };
+
   return (
     <View style={s.container}>
+      {/* Header */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>Mi Calendario</Text>
+        <Text style={s.headerTitle}>Calendario</Text>
+        <View style={s.headerMeta}>
+          <TouchableOpacity onPress={prevMonth} style={s.navBtn}>
+            <Ionicons name="chevron-back" size={20} color={TEXT} />
+          </TouchableOpacity>
+          <Text style={s.monthLabel}>
+            {format(viewMonth, 'MMMM yyyy', { locale: es }).replace(/^\w/, c => c.toUpperCase())}
+          </Text>
+          <TouchableOpacity onPress={nextMonth} style={s.navBtn}>
+            <Ionicons name="chevron-forward" size={20} color={TEXT} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Week picker */}
-      <View style={s.weekRow}>
-        {weekDays.map(day => {
-          const active = format(day, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd');
+      {/* Day-of-week headers */}
+      <View style={s.dayHeaders}>
+        {DAY_HEADERS.map(d => (
+          <Text key={d} style={s.dayHeader}>{d}</Text>
+        ))}
+      </View>
+
+      {/* Month grid */}
+      <View style={s.grid}>
+        {gridDays.map(day => {
+          const isToday = isSameDay(day, new Date());
+          const isSelected = isSameDay(day, selectedDate);
+          const inMonth = isSameMonth(day, viewMonth);
+          const hasEvent = datesWithEvents.has(day.toDateString());
+
           return (
-            <TouchableOpacity key={day.toISOString()} style={[s.dayBtn, active && s.dayBtnActive]} onPress={() => setSelectedDate(day)}>
-              <Text style={[s.dayName, active && s.dayNameActive]}>
-                {format(day, 'EEE', { locale: es }).substring(0, 3)}
+            <TouchableOpacity
+              key={day.toISOString()}
+              style={[s.dayCell, isSelected && s.dayCellSelected, isToday && !isSelected && s.dayCellToday]}
+              onPress={() => { setSelectedDate(day); if (!isSameMonth(day, viewMonth)) setViewMonth(day); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                s.dayNum,
+                !inMonth && s.dayNumFaded,
+                isSelected && s.dayNumSelected,
+                isToday && !isSelected && s.dayNumToday,
+              ]}>
+                {format(day, 'd')}
               </Text>
-              <Text style={[s.dayNum, active && s.dayNumActive]}>{format(day, 'd')}</Text>
+              {hasEvent && inMonth && (
+                <View style={[s.eventDot, isSelected && { backgroundColor: '#0a0f1a' }]} />
+              )}
             </TouchableOpacity>
           );
         })}
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={s.dateLabel}>
-          {format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}
+      {/* Agenda del día */}
+      <View style={s.agendaHeader}>
+        <Text style={s.agendaTitle}>Agenda del día</Text>
+        <Text style={s.agendaDate}>
+          {format(selectedDate, "EEEE d 'de' MMMM", { locale: es }).replace(/^\w/, c => c.toUpperCase())}
         </Text>
+      </View>
 
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {isLoading ? (
-          <ActivityIndicator color="#16a34a" style={{ marginTop: 32 }} />
+          <ActivityIndicator color={GOLD} style={{ marginTop: 32 }} />
         ) : allEvents.length === 0 ? (
           <View style={s.empty}>
-            <Ionicons name="calendar-outline" size={48} color="#d1d5db" />
+            <Ionicons name="calendar-outline" size={40} color={SUB} />
             <Text style={s.emptyText}>Sin eventos para este día</Text>
           </View>
         ) : (
           allEvents.map((event: any, i) => {
             const isReservation = event.type === 'RESERVATION';
             const isMatch = event.type === 'MATCH';
-            const color = isReservation ? '#16a34a' : isMatch ? '#d97706' : '#7c3aed';
-            const bgColor = isReservation ? '#f0fdf4' : isMatch ? '#fffbeb' : '#faf5ff';
+            const color = isReservation ? GREEN : isMatch ? GOLD : '#7c3aed';
             const time = event.startTime
               ? format(new Date(event.startTime), 'HH:mm')
               : event.scheduledTime
@@ -78,16 +165,15 @@ export default function CalendarScreen() {
               : format(new Date(event.startDate), 'dd/MM');
 
             return (
-              <View key={event.id + i} style={[s.eventCard, { borderLeftColor: color }]}>
-                <View style={[s.eventDot, { backgroundColor: bgColor }]}>
-                  <Ionicons
-                    name={isReservation ? 'tennisball' : isMatch ? 'flash' : 'trophy'}
-                    size={16}
-                    color={color}
-                  />
-                </View>
-                <View style={s.eventInfo}>
+              <View key={event.id + i} style={s.eventCard}>
+                {/* Time block */}
+                <View style={s.timeBlock}>
                   <Text style={s.eventTime}>{time}</Text>
+                </View>
+                {/* Colored bar */}
+                <View style={[s.colorBar, { backgroundColor: color }]} />
+                {/* Info */}
+                <View style={s.eventInfo}>
                   <Text style={s.eventTitle}>
                     {isReservation
                       ? event.court?.name ?? 'Reserva'
@@ -95,12 +181,17 @@ export default function CalendarScreen() {
                       ? 'Partido'
                       : event.name}
                   </Text>
-                  {isReservation && (
-                    <Text style={s.eventSub}>{event.club?.profile?.name ?? event.club?.name}</Text>
-                  )}
+                  <Text style={s.eventSub}>
+                    {isReservation
+                      ? event.club?.profile?.name ?? event.club?.name ?? ''
+                      : isMatch
+                      ? event.opponent ?? ''
+                      : event.category ?? ''}
+                  </Text>
                 </View>
-                <View style={[s.eventBadge, { backgroundColor: bgColor }]}>
-                  <Text style={[s.eventBadgeText, { color }]}>
+                {/* Type badge */}
+                <View style={[s.typeBadge, { borderColor: color + '55' }]}>
+                  <Text style={[s.typeBadgeText, { color }]}>
                     {isReservation ? 'Reserva' : isMatch ? 'Partido' : 'Torneo'}
                   </Text>
                 </View>
@@ -114,34 +205,60 @@ export default function CalendarScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: { backgroundColor: '#fff', paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16 },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: '#111827' },
-  weekRow: {
-    flexDirection: 'row', backgroundColor: '#fff', paddingHorizontal: 8, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
+  container: { flex: 1, backgroundColor: BG },
+  header: {
+    paddingTop: 56, paddingHorizontal: 20, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  dayBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
-  dayBtnActive: { backgroundColor: '#16a34a' },
-  dayName: { fontSize: 11, fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' },
-  dayNameActive: { color: '#dcfce7' },
-  dayNum: { fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 2 },
-  dayNumActive: { color: '#fff' },
-  scroll: { padding: 16, paddingBottom: 32 },
-  dateLabel: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 16, textTransform: 'capitalize' },
-  empty: { alignItems: 'center', paddingTop: 48 },
-  emptyText: { color: '#9ca3af', marginTop: 12, fontSize: 14 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: TEXT, marginBottom: 12 },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  monthLabel: { fontSize: 16, fontWeight: '700', color: TEXT },
+  navBtn: { padding: 6 },
+
+  dayHeaders: {
+    flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  dayHeader: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700', color: SUB },
+
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingVertical: 8 },
+  dayCell: {
+    width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 6,
+    borderRadius: 10, gap: 3,
+  },
+  dayCellSelected: { backgroundColor: GOLD },
+  dayCellToday: { borderWidth: 1, borderColor: GOLD },
+  dayNum: { fontSize: 14, fontWeight: '600', color: TEXT },
+  dayNumFaded: { color: '#374151' },
+  dayNumSelected: { color: '#0a0f1a', fontWeight: '800' },
+  dayNumToday: { color: GOLD, fontWeight: '800' },
+  eventDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: GOLD },
+
+  agendaHeader: {
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 8,
+    borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  agendaTitle: { fontSize: 16, fontWeight: '700', color: TEXT },
+  agendaDate: { fontSize: 13, color: SUB, marginTop: 2, textTransform: 'capitalize' },
+
+  scroll: { padding: 16, paddingBottom: 40, gap: 10 },
+  empty: { alignItems: 'center', paddingTop: 32, gap: 12 },
+  emptyText: { color: SUB, fontSize: 14 },
+
   eventCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: CARD, borderRadius: 14, padding: 14,
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderLeftWidth: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
+    borderWidth: 1, borderColor: BORDER,
   },
-  eventDot: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  timeBlock: { minWidth: 44, alignItems: 'center' },
+  eventTime: { fontSize: 14, fontWeight: '800', color: TEXT },
+  colorBar: { width: 3, height: 40, borderRadius: 2 },
   eventInfo: { flex: 1 },
-  eventTime: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
-  eventTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginTop: 1 },
-  eventSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  eventBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  eventBadgeText: { fontSize: 11, fontWeight: '700' },
+  eventTitle: { fontSize: 14, fontWeight: '700', color: TEXT },
+  eventSub: { fontSize: 12, color: SUB, marginTop: 3 },
+  typeBadge: {
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 1,
+  },
+  typeBadgeText: { fontSize: 11, fontWeight: '700' },
 });

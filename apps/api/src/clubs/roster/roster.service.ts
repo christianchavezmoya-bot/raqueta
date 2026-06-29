@@ -23,9 +23,29 @@ type RosterRow = {
   city?: string;
 };
 
+// Stage 16 — 6 point-sources from the spreadsheet-to-UI architecture doc.
+// Each row auto-seeds per new club. Staff can change `points` per club, and
+// can issue ad-hoc positive (bonus) or negative (penalty) awards via
+// ClubBonusPointAward — the schema allows any integer points.
+//
+// Source layout, mapped to the Ranking General breakdown card:
+//   PE3     — current escalerilla (ladder) round points
+//   PE2     — historical escalerilla contribution
+//   INTER   — intercategoría points
+//   LIG     — promotion liguilla points
+//   DESAFIO — challenge match points (stake is the configurable `points`)
+//   PENALTY — penalty source (negative deltas)
+//
+// `BASE` (PR/PREA) is computed analytically (see
+// ClubRankingsService.getPlayerBreakdown) from season start snapshots + rule
+// base values, not stored on ClubBonusPointType.
 const DEFAULT_BONUS_TYPES = [
-  { key: 'DESAFIO',  label: 'Desafío',               points: 50  },
-  { key: 'LIGUILLA', label: 'Resultado de Liguilla', points: 100 },
+  { key: 'PE3',      label: 'Escalerilla actual',      points: 25 },
+  { key: 'PE2',      label: 'Escalerilla histórica',   points: 0  },
+  { key: 'INTER',    label: 'Intercategoría',          points: 0  },
+  { key: 'LIG',      label: 'Liga Promoción',          points: 0  },
+  { key: 'DESAFIO',  label: 'Desafío',                  points: 25 }, // configurable per club
+  { key: 'PENALTY',  label: 'Penalización (default)',  points: -10 }, // configurable per club
 ] as const;
 
 @Injectable()

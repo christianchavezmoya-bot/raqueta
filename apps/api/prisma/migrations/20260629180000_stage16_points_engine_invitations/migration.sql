@@ -1,0 +1,24 @@
+-- Stage 16: tournament hub + invitations + 6-source points engine + PRACTICE category.
+--
+-- This migration is intentionally a NO-OP for the schema delta: the
+-- PRACTICE enum value on MatchLogType was added by an out-of-band
+-- ALTER TYPE statement before this migration registered, because
+-- Postgres does not allow ADD VALUE inside a transaction block (which
+-- prisma migrate dev wraps around the migration script).
+--
+-- The reason this migration exists at all is to record the schema
+-- boundary in prisma_migrations so subsequent environments apply the
+-- same `npx prisma migrate deploy` sequence idempotently.
+--
+-- No additional DDL is required at this point — the new MatchLogType
+-- enum value, the 6-source point breakdown computation, the configurable
+-- Desafio stake, the free-form PENALTY / bonus flows, and the tournament
+-- invitation notification path are all implemented in application code
+-- on top of the existing schema primitives (ClubBonusPointType,
+-- ClubBonusPointAward, ClubMatchResult, ClubRankingEntry,
+-- RankingSeason, TournamentRegistration, Notification).
+--
+-- Stage 16 follow-up (separate migration if needed): the app code seeds
+-- the six new bonus-type keys (PE3 / PE2 / INTER / LIG / DESAFIO / PENALTY)
+-- per new club via the existing ensureRulesSeeded hook in the roster service.
+-- Existing clubs adopt them on next roster interaction (idempotent upsert).

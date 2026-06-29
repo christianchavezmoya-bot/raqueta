@@ -3,12 +3,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
+const GOLD = '#d4a017';
+const INACTIVE = '#6b7280';
+const TAB_BG = '#0a0f1a';
+
 const tabs: Array<{ name: string; title: string; icon: IoniconsName; activeIcon: IoniconsName }> = [
-  { name: 'index', title: 'Inicio', icon: 'home-outline', activeIcon: 'home' },
-  { name: 'explore', title: 'Explorar', icon: 'search-outline', activeIcon: 'search' },
-  { name: 'calendar', title: 'Calendario', icon: 'calendar-outline', activeIcon: 'calendar' },
-  { name: 'tournaments', title: 'Torneos', icon: 'trophy-outline', activeIcon: 'trophy' },
-  { name: 'profile', title: 'Perfil', icon: 'person-outline', activeIcon: 'person' },
+  { name: 'index',       title: 'Inicio',     icon: 'home-outline',     activeIcon: 'home' },
+  { name: 'calendar',    title: 'Calendario', icon: 'calendar-outline', activeIcon: 'calendar' },
+  { name: 'tournaments', title: 'Torneos',    icon: 'trophy-outline',   activeIcon: 'trophy' },
+  { name: 'profile',     title: 'Perfil',     icon: 'person-outline',   activeIcon: 'person' },
+  { name: 'mas',         title: 'Más',        icon: 'ellipsis-horizontal-outline', activeIcon: 'ellipsis-horizontal' },
 ];
 
 export default function TabsLayout() {
@@ -16,15 +20,17 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#16a34a',
-        tabBarInactiveTintColor: '#9ca3af',
+        tabBarActiveTintColor: GOLD,
+        tabBarInactiveTintColor: INACTIVE,
         tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopColor: '#f3f4f6',
-          paddingBottom: 4,
-          height: 60,
+          backgroundColor: TAB_BG,
+          borderTopColor: '#1f2937',
+          borderTopWidth: 1,
+          paddingBottom: 6,
+          paddingTop: 4,
+          height: 64,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: 2 },
       }}
     >
       {tabs.map(({ name, title, icon, activeIcon }) => (

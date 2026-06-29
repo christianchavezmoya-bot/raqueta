@@ -117,4 +117,75 @@ export class ClubRankingsController {
   getInternalRankings(@Param('clubId') clubId: string) {
     return this.clubRankingsService.getInternalRankings(clubId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/rankings/breakdown')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get point breakdown for a single roster entry (PR, PE3, Desafíos, Penalizaciones)' })
+  getRankingBreakdown(
+    @Param('clubId') clubId: string,
+    @Query('rosterId') rosterId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.getRankingBreakdown(clubId, rosterId, actor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/seasons/:seasonId/my-matches')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List competitive match results for the logged-in player (excludes PRACTICE/casual)' })
+  getMyCompetitiveMatches(
+    @Param('clubId') clubId: string,
+    @Param('seasonId') seasonId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.getMyCompetitiveMatches(clubId, seasonId, actor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/seasons/current/my-matches')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List competitive match results for current season (logged-in player)' })
+  getMyCompetitiveMatchesCurrentSeason(
+    @Param('clubId') clubId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.getMyCompetitiveMatches(clubId, 'current', actor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/seasons/current/my-stats')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get win-rate and point evolution stats for the logged-in player' })
+  getMyStats(
+    @Param('clubId') clubId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.getMyStats(clubId, actor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/match-results')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List club match results with optional source filter' })
+  listMatchResults(
+    @Param('clubId') clubId: string,
+    @Query('source') source: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.listMatchResults(clubId, { source, limit: limit ? parseInt(limit, 10) : 30 }, actor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/match-results/:resultId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get single match result detail' })
+  getMatchResult(
+    @Param('clubId') clubId: string,
+    @Param('resultId') resultId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.clubRankingsService.getMatchResult(clubId, resultId, actor);
+  }
 }
