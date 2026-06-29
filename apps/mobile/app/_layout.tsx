@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
@@ -45,6 +45,8 @@ async function registerPushToken() {
 export default function RootLayout() {
   const restoreSession = useAuthStore(s => s.restoreSession);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const router = useRouter();
+  const lastResponse = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
     restoreSession();
@@ -55,6 +57,15 @@ export default function RootLayout() {
       registerPushToken();
     }
   }, [isAuthenticated]);
+
+  // Route notification taps to the relevant in-app screen
+  useEffect(() => {
+    if (!lastResponse || !isAuthenticated) return;
+    const data = lastResponse.notification.request.content.data as Record<string, unknown>;
+    if (data?.type === 'TOURNAMENT_OPEN' && data?.tournamentId) {
+      router.push(`/torneos/inscripcion/${data.tournamentId}` as any);
+    }
+  }, [lastResponse, isAuthenticated]);
 
   return (
     <QueryClientProvider client={queryClient}>

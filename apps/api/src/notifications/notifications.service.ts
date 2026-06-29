@@ -158,6 +158,44 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Bulk send with a structured data payload attached to each push message
+   * (e.g. `{ type: 'TOURNAMENT_OPEN', tournamentId: '...' }`). The mobile
+   * app's `useLastNotificationResponse` handler can inspect `data` to decide
+   * where to route the user on tap.
+   */
+  async sendBulkWithData(
+    userIds: string[],
+    title: string,
+    message: string,
+    data: Record<string, unknown>,
+    type: NotificationType = 'GENERAL',
+  ) {
+    await this.prisma.notification.createMany({
+      data: userIds.map(userId => ({ userId, title, message, type })),
+    });
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, expoPushToken: { not: null } },
+      select: { expoPushToken: true },
+    });
+
+    const validTokens = users
+      .map(u => u.expoPushToken)
+      .filter((t): t is string => !!t && t.startsWith('ExponentPushToken['));
+
+    if (!validTokens.length) return;
+
+    // Expo accepts batched messages
+    const messages = validTokens.map(to => ({ to, title, body: message, sound: 'default', data }));
+
+    fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(messages),
+    }).catch(err => this.logger.warn(`Bulk push failed: ${err.message}`));
+  }
+
   private async sendExpoPush(userId: string, title: string, body: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

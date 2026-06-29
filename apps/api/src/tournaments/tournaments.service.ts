@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ClubMatchResultSource, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { assertCanActForPlayer } from '../common/utils/transact-gate';
 
 @Injectable()
 export class TournamentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async findAll(clubId?: string) {
     const where: any = clubId ? { clubId } : {};
@@ -388,6 +392,64 @@ export class TournamentsService {
       throw new BadRequestException(`Roster entry ${rosterId} does not belong to this club`);
     }
     return entry;
+  }
+
+  /**
+   * Part C — Staff opens registration and notifies all home-club players who
+   * haven't yet registered. Only players with active memberships in the
+   * tournament's own club are targeted (home-club first rule).
+   * Idempotent: duplicate calls skip already-notified players.
+   */
+  async notifyOpen(tournamentId: string) {
+    const tournament = await this.ensureExists(tournamentId);
+    if (tournament.status !== 'REGISTRATION_OPEN') {
+      throw new BadRequestException('Set tournament status to REGISTRATION_OPEN first');
+    }
+
+    // Find all active members of this club who have a linked user account
+    const members = await this.prisma.membership.findMany({
+      where: {
+        clubId: tournament.clubId,
+        status: 'ACTIVE',
+        roster: { linkedPlayerProfile: { userId: { not: null } } },
+      },
+      include: {
+        roster: {
+          include: {
+            linkedPlayerProfile: { select: { userId: true } },
+          },
+        },
+      },
+    });
+
+    // Find user IDs who are already registered
+    const existing = await this.prisma.tournamentRegistration.findMany({
+      where: { tournamentId },
+      include: { roster: { include: { linkedPlayerProfile: { select: { userId: true } } } } },
+    });
+    const alreadyRegisteredUserIds = new Set(
+      existing
+        .map(r => r.roster?.linkedPlayerProfile?.userId)
+        .filter((id): id is string => !!id),
+    );
+
+    const targetUserIds = members
+      .map(m => m.roster?.linkedPlayerProfile?.userId)
+      .filter((id): id is string => !!id && !alreadyRegisteredUserIds.has(id));
+
+    if (!targetUserIds.length) {
+      return { notified: 0, message: 'No eligible players to notify' };
+    }
+
+    await this.notifications.sendBulkWithData(
+      targetUserIds,
+      `¡Inscripciones abiertas: ${tournament.name}!`,
+      `Las inscripciones para ${tournament.name} están abiertas. Toca para inscribirte ahora.`,
+      { type: 'TOURNAMENT_OPEN', tournamentId: tournament.id },
+      'GENERAL',
+    );
+
+    return { notified: targetUserIds.length };
   }
 
   private async ensureExists(id: string) {

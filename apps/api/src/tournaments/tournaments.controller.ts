@@ -130,6 +130,20 @@ export class TournamentsController {
     return this.tournamentsService.generateFixture(id);
   }
 
+  /**
+   * Part C — Open registration and push-notify all home-club players who
+   * haven't yet registered. Idempotent: safe to call multiple times.
+   * Requires tournament status = REGISTRATION_OPEN (set via PATCH first).
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
+  @Post('tournaments/:id/notify-open')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Notify all unregistered home-club players that registration is open' })
+  notifyOpen(@Param('id') id: string) {
+    return this.tournamentsService.notifyOpen(id);
+  }
+
   // ─── Imports (Part B) ────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard, RolesGuard)
