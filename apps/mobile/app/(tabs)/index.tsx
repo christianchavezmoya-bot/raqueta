@@ -1,4 +1,5 @@
-import { Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ImageBackground, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import type { ViewProps } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -113,6 +114,18 @@ export default function HomeScreen() {
   const clubName = home.activeMemberships?.[0]?.club?.name ?? 'Comunidad N-G';
   const firstClubId = home.activeMemberships?.[0]?.club?.id;
 
+  const { data: clubData } = useQuery({
+    queryKey: ['club-detail', firstClubId],
+    queryFn: async () => {
+      if (!firstClubId) return null;
+      const { data } = await api.get(`/clubs/${firstClubId}`);
+      return data ?? null;
+    },
+    enabled: !!firstClubId,
+    staleTime: 60_000,
+  });
+  const bannerUrl: string | null = clubData?.profile?.bannerUrl ?? null;
+
   const { data: rankingData } = useQuery({
     queryKey: ['club-ranking-internal', firstClubId],
     queryFn: async () => {
@@ -223,23 +236,38 @@ export default function HomeScreen() {
   const openNotifications = () => setIsNotificationsOpen(true);
   const closeNotifications = () => setIsNotificationsOpen(false);
 
+  const HeroWrapper = bannerUrl
+    ? ({ children }: { children: ViewProps['children'] }) => (
+        <ImageBackground
+          source={{ uri: bannerUrl }}
+          style={s.heroBanner}
+          imageStyle={s.heroBannerImage}
+          resizeMode="cover"
+        >
+          <View style={s.heroOverlay}>{children}</View>
+        </ImageBackground>
+      )
+    : ({ children }: { children: ViewProps['children'] }) => (
+        <View style={s.topBar}>{children}</View>
+      );
+
   return (
     <View style={s.container}>
-      <View style={s.topBar}>
+      <HeroWrapper>
         <View style={s.topBarRight}>
           <View style={s.userSummary}>
             <View style={s.userMeta}>
-              <Text style={s.userName}>Hola, {displayName.split(' ')[0]}</Text>
-              <Text style={s.userLevel} numberOfLines={1}>
+              <Text style={[s.userName, bannerUrl && s.userNameOnPhoto]}>Hola, {displayName.split(' ')[0]}</Text>
+              <Text style={[s.userLevel, bannerUrl && s.userLevelOnPhoto]} numberOfLines={1}>
                 {division ? `${headerMeta} · ${division}` : headerMeta}
               </Text>
             </View>
-            <View style={s.avatar}>
+            <View style={[s.avatar, bannerUrl && s.avatarOnPhoto]}>
               <Text style={s.avatarText}>{initials(displayName)}</Text>
             </View>
           </View>
 
-          <TouchableOpacity style={s.bellButton} onPress={openNotifications}>
+          <TouchableOpacity style={[s.bellButton, bannerUrl && s.bellButtonOnPhoto]} onPress={openNotifications}>
             <Ionicons name="notifications-outline" size={22} color={TEXT} />
             {unreadCount > 0 && (
               <View style={s.bellBadge}>
@@ -248,7 +276,21 @@ export default function HomeScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+
+        {/* Club name + rank badge overlaid on photo */}
+        {bannerUrl && (
+          <View style={s.heroBottom}>
+            <Text style={s.heroClubName}>{clubName}</Text>
+            {myRankEntry && (
+              <View style={s.rankBadge}>
+                <Text style={s.rankBadgeText}>
+                  #{myRankEntry.rank} · {myRankEntry.totalPoints?.toLocaleString('es-CL') ?? '—'} pts
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </HeroWrapper>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -261,7 +303,8 @@ export default function HomeScreen() {
           />
         }
       >
-        {myRankEntry && (
+        {/* Rank badge shown in scroll when no photo hero */}
+        {!bannerUrl && myRankEntry && (
           <View style={s.rankBadge}>
             <Text style={s.rankBadgeText}>
               Ranking #{myRankEntry.rank} · {myRankEntry.totalPoints?.toLocaleString('es-CL') ?? '—'} pts
@@ -269,12 +312,14 @@ export default function HomeScreen() {
           </View>
         )}
 
-        <View style={s.brandBanner}>
-          <Text style={s.brandWordmark}>N-G</Text>
-          <View style={s.brandBall}>
-            <Ionicons name="tennisball" size={24} color="#0a0f1a" />
+        {!bannerUrl && (
+          <View style={s.brandBanner}>
+            <Text style={s.brandWordmark}>N-G</Text>
+            <View style={s.brandBall}>
+              <Ionicons name="tennisball" size={24} color="#0a0f1a" />
+            </View>
           </View>
-        </View>
+        )}
 
         {latestUnread && (
           <TouchableOpacity
@@ -448,6 +493,31 @@ function StatBox({ label, value }: { label: string; value: string }) {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
+
+  /* ── Photo hero (when bannerUrl is set) ── */
+  heroBanner: { width: '100%', minHeight: 180 },
+  heroBannerImage: { opacity: 0.75 },
+  heroOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(10,15,26,0.45)',
+    paddingTop: 56,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    gap: 8,
+  },
+  heroBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  heroClubName: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 0.3, textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  userNameOnPhoto: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  userLevelOnPhoto: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  avatarOnPhoto: { borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  bellButtonOnPhoto: { backgroundColor: 'rgba(0,0,0,0.35)', borderColor: 'rgba(255,255,255,0.25)' },
+
+  /* ── Dark bar (fallback when no banner) ── */
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

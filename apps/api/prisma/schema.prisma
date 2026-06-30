@@ -945,16 +945,17 @@ model ClubDivisionConfig {
 }
 
 model ClubRankingEntry {
-  id          String   @id @default(uuid())
-  clubId      String   @map("club_id")
-  seasonId    String?  @map("season_id")
-  rosterId    String   @map("roster_id")
-  rank        Int
-  totalPoints Int      @default(0) @map("total_points")
-  gamesPlayed Int      @default(0) @map("games_played")
-  withdrawn   Boolean  @default(false)
-  division    String?
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  clubId       String   @map("club_id")
+  seasonId     String?  @map("season_id")
+  rosterId     String   @map("roster_id")
+  rank         Int
+  previousRank Int?     @map("previous_rank")
+  totalPoints  Int      @default(0) @map("total_points")
+  gamesPlayed  Int      @default(0) @map("games_played")
+  withdrawn    Boolean  @default(false)
+  division     String?
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   club        Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
   season      RankingSeason?   @relation(fields: [seasonId], references: [id], onDelete: Cascade)

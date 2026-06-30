@@ -543,7 +543,7 @@ export class ClubRankingsService {
   async getInternalRankings(clubId: string, seasonId?: string) {
     await this.ensureClubExists(clubId);
     const resolvedSeason = seasonId ?? await this.getActiveSeasonId(clubId);
-    return this.prisma.clubRankingEntry.findMany({
+    const entries = await this.prisma.clubRankingEntry.findMany({
       where: { clubId, seasonId: resolvedSeason ?? undefined },
       include: {
         rosterEntry: {
@@ -554,6 +554,13 @@ export class ClubRankingsService {
       },
       orderBy: [{ rank: 'asc' }, { updatedAt: 'asc' }],
     });
+    // Compute movement: positive = improved rank (moved up), negative = dropped.
+    // Null previousRank means the player had no prior snapshot (first calculation);
+    // we report movement: 0 (neutral) in that case so the UI can show "—".
+    return entries.map(e => ({
+      ...e,
+      movement: e.previousRank == null ? 0 : e.previousRank - e.rank,
+    }));
   }
 
   // ─── PRIVATE: RECALCULATE INTERNAL ───────────────────────────────────────────
@@ -613,6 +620,13 @@ export class ClubRankingsService {
       .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
 
     await this.prisma.$transaction(async tx => {
+      // Snapshot existing ranks BEFORE deleting so we can write previousRank on recreation.
+      const existingEntries = await tx.clubRankingEntry.findMany({
+        where: { clubId, seasonId: seasonId ?? null },
+        select: { rosterId: true, rank: true },
+      });
+      const prevRankMap = new Map(existingEntries.map(e => [e.rosterId, e.rank]));
+
       // Delete entries for this season (or null-season) and recreate
       await tx.clubRankingEntry.deleteMany({
         where: { clubId, seasonId: seasonId ?? null },
@@ -628,12 +642,13 @@ export class ClubRankingsService {
         await tx.clubRankingEntry.createMany({
           data: ranked.map(entry => ({
             clubId,
-            seasonId:    seasonId ?? null,
-            rosterId:    entry.rosterId,
-            rank:        entry.rank,
-            totalPoints: entry.totalPoints,
-            gamesPlayed: entry.gamesPlayed,
-            division:    divMap.get(entry.rosterId) ?? null,
+            seasonId:     seasonId ?? null,
+            rosterId:     entry.rosterId,
+            rank:         entry.rank,
+            previousRank: prevRankMap.get(entry.rosterId) ?? null,
+            totalPoints:  entry.totalPoints,
+            gamesPlayed:  entry.gamesPlayed,
+            division:     divMap.get(entry.rosterId) ?? null,
           })),
         });
       }

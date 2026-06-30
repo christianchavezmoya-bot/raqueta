@@ -16,7 +16,15 @@ async function bootstrap() {
 
   // Serve uploaded media files as public static assets at /storage/*
   const rawRoot = configService.get<string>('STORAGE_ROOT', './storage');
+  if (!path.isAbsolute(rawRoot)) {
+    console.warn(
+      `⚠️  STORAGE_ROOT is a relative path ("${rawRoot}"). ` +
+      `Files will be resolved against process.cwd() = "${process.cwd()}" at this startup. ` +
+      `Set STORAGE_ROOT to an absolute path in .env to prevent uploads scattering across restarts.`,
+    );
+  }
   const storageRoot = path.isAbsolute(rawRoot) ? rawRoot : path.resolve(process.cwd(), rawRoot);
+  console.log(`🗂️  Storage root: ${storageRoot}`);
   app.useStaticAssets(storageRoot, { prefix: '/storage' });
 
   app.setGlobalPrefix(prefix);

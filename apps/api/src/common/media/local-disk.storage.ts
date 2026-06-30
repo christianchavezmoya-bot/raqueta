@@ -19,7 +19,14 @@ export class LocalDiskStorageProvider implements StorageProvider {
 
   constructor(private config: ConfigService) {
     const rawRoot = config.get<string>('STORAGE_ROOT', './storage');
+    if (!path.isAbsolute(rawRoot)) {
+      this.logger.warn(
+        `STORAGE_ROOT "${rawRoot}" is relative — resolving against cwd "${process.cwd()}". ` +
+        'Set an absolute path in .env to avoid uploads scattering across restarts.',
+      );
+    }
     this.root = path.isAbsolute(rawRoot) ? rawRoot : path.resolve(process.cwd(), rawRoot);
+    this.logger.log(`Storage root: ${this.root}`);
     this.publicBase = `${config.get<string>('API_BASE_URL', 'http://localhost:3001')}/storage`;
   }
 
