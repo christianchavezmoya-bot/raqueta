@@ -171,6 +171,19 @@ export class PlayersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('me/tournaments')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Tournaments I am registered in, across all clubs. ' +
+      'Excludes DRAFT and CANCELLED. Does NOT include open tournaments the player ' +
+      'has not joined — discovery is handled via GET /tournaments?clubId=.',
+  })
+  getMyTournaments(@CurrentUser('id') userId: string) {
+    return this.playersService.findMyTournaments(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('me/club-matches/:rosterId/confirm')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)

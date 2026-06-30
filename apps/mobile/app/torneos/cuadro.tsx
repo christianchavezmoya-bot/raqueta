@@ -235,22 +235,24 @@ export default function CuadroTorneoScreen() {
   // "active" (relevant once a club runs more than one concurrent tournament).
   const { tournamentId: paramId } = useLocalSearchParams<{ tournamentId?: string }>();
 
-  // Only fetch the list when no explicit ID was passed in.
-  const { data: tournaments, isLoading: listLoading } = useQuery({
-    queryKey: ['tournaments-cuadro'],
+  // Only fetch the player-scoped list when no explicit ID was passed in.
+  // Uses /players/me/tournaments (never the platform-wide unfiltered list).
+  const { data: myTournaments, isLoading: listLoading } = useQuery({
+    queryKey: ['my-tournaments'],
     queryFn: async () => {
-      const { data } = await api.get('/tournaments');
+      const { data } = await api.get('/players/me/tournaments');
       return Array.isArray(data) ? data : [];
     },
     enabled: !paramId,
+    staleTime: 30_000,
   });
 
   const activeTournament = paramId
     ? { id: paramId, categories: [] as any[], name: '' }
     : (
-        tournaments?.find((t: any) => t.status === 'IN_PROGRESS') ??
-        tournaments?.find((t: any) => t.status === 'REGISTRATION_OPEN') ??
-        tournaments?.[0]
+        myTournaments?.find((t: any) => t.status === 'IN_PROGRESS') ??
+        myTournaments?.find((t: any) => t.status === 'REGISTRATION_OPEN') ??
+        myTournaments?.[0]
       );
 
   const isLoading = !paramId && listLoading;

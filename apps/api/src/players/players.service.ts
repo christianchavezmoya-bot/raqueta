@@ -1234,6 +1234,85 @@ export class PlayersService {
     );
     return { tier: 'MEMBER', clubId, clubName: club.name, membershipRequest };
   }
+
+  /**
+   * Returns every tournament the calling player has an active registration in,
+   * across all clubs — scoped strictly to registrations, never a platform-wide
+   * leak. DRAFT and CANCELLED tournaments are excluded (no meaningful action
+   * available to the player). Discovery of open tournaments the player hasn't
+   * joined yet is intentionally NOT included here; that belongs to a separate
+   * club-scoped discovery surface, not this player-scoped list.
+   */
+  async findMyTournaments(userId: string) {
+    const profile = await this.prisma.playerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) return [];
+
+    // All roster entries for this player across every club.
+    const rosters = await this.prisma.clubPlayerRoster.findMany({
+      where: { linkedPlayerProfileId: profile.id },
+      select: { id: true },
+    });
+    if (!rosters.length) return [];
+    const rosterIds = rosters.map(r => r.id);
+
+    // Registrations that link to one of those roster entries.
+    const registrations = await this.prisma.tournamentRegistration.findMany({
+      where: {
+        rosterId: { in: rosterIds },
+        tournament: { status: { notIn: ['DRAFT', 'CANCELLED'] } },
+      },
+      select: {
+        id: true,
+        categoryId: true,
+        category: { select: { id: true, name: true } },
+        tournament: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            format: true,
+            startDate: true,
+            endDate: true,
+            categories: { select: { id: true, name: true } },
+            club: {
+              select: {
+                id: true,
+                name: true,
+                profile: { select: { logoUrl: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Deduplicate by tournament (a player could be registered in multiple
+    // categories of the same tournament) and return one entry per tournament
+    // with the player's registered categories attached.
+    const byTournament = new Map<string, {
+      tournament: (typeof registrations)[number]['tournament'];
+      myCategories: Array<{ id: string; name: string }>;
+    }>();
+
+    for (const reg of registrations) {
+      const t = reg.tournament;
+      const existing = byTournament.get(t.id);
+      const cat = reg.category ? { id: reg.category.id, name: reg.category.name } : null;
+      if (existing) {
+        if (cat) existing.myCategories.push(cat);
+      } else {
+        byTournament.set(t.id, { tournament: t, myCategories: cat ? [cat] : [] });
+      }
+    }
+
+    return Array.from(byTournament.values()).map(({ tournament, myCategories }) => ({
+      ...tournament,
+      myCategories,
+    }));
+  }
 }
 
 function sameDate(a: Date | null | undefined, b: Date | null | undefined): boolean {
