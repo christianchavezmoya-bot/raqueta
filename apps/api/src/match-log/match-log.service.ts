@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { validateTennisScore, SetResult } from './tennis-score.util';
 
 export interface CreateMatchLogDto {
-  type: 'MATCH' | 'TRAINING' | 'COACHING' | 'FITNESS';
+  type: 'MATCH' | 'PRACTICE' | 'TRAINING' | 'COACHING' | 'FITNESS';
   date: string; // ISO date string
   durationMins?: number;
   location?: string;
@@ -37,19 +37,20 @@ export class MatchLogService {
     }
 
     let playerWon: boolean | undefined;
+    const isScoredMatch = dto.type === 'MATCH' || dto.type === 'PRACTICE';
 
-    // For MATCH type: validate the score
-    if (dto.type === 'MATCH' && dto.sets && dto.sets.length > 0) {
+    // Scored match types share the same validation and winner derivation.
+    if (isScoredMatch && dto.sets && dto.sets.length > 0) {
       const bestOf = dto.bestOf ?? 3;
       const result = validateTennisScore(dto.sets, bestOf);
       if (!result.valid) {
         throw new BadRequestException(`Invalid tennis score: ${result.error}`);
       }
       playerWon = result.winner === 1;
-    } else if (dto.type === 'MATCH' && (!dto.sets || dto.sets.length === 0)) {
-      // MATCH with no score is allowed (e.g. DNF or incomplete log)
-    } else if (dto.type !== 'MATCH' && dto.sets && dto.sets.length > 0) {
-      throw new BadRequestException('Score (sets) only applies to MATCH type entries');
+    } else if (isScoredMatch && (!dto.sets || dto.sets.length === 0)) {
+      // MATCH/PRACTICE with no score is allowed (e.g. DNF or incomplete log)
+    } else if (!isScoredMatch && dto.sets && dto.sets.length > 0) {
+      throw new BadRequestException('Score (sets) only applies to MATCH or PRACTICE entries');
     }
 
     return this.prisma.matchLogEntry.create({

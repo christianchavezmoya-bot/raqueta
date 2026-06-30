@@ -3,12 +3,22 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ActingUser, assertClubScope } from '../../common/utils/club-scope';
 import { AwardBonusDto } from './dto/award-bonus.dto';
 
+const DEFAULT_BONUS_TYPES = [
+  { key: 'PE3', label: 'Escalerilla actual', points: 25 },
+  { key: 'PE2', label: 'Escalerilla histórica', points: 0 },
+  { key: 'INTER', label: 'Intercategoría', points: 0 },
+  { key: 'LIG', label: 'Liga Promoción', points: 0 },
+  { key: 'DESAFIO', label: 'Desafío', points: 25 },
+  { key: 'PENALTY', label: 'Penalización (default)', points: -10 },
+] as const;
+
 @Injectable()
 export class BonusPointsService {
   constructor(private prisma: PrismaService) {}
 
   async listBonusTypes(clubId: string, actor: ActingUser) {
     await this.assertScope(clubId, actor);
+    await this.ensureBonusTypesSeeded(clubId);
     return this.prisma.clubBonusPointType.findMany({
       where: { clubId },
       orderBy: { key: 'asc' },
@@ -17,6 +27,7 @@ export class BonusPointsService {
 
   async awardBonus(clubId: string, dto: AwardBonusDto, actor: ActingUser) {
     await this.assertScope(clubId, actor);
+    await this.ensureBonusTypesSeeded(clubId);
 
     // Validate season
     const season = await this.prisma.rankingSeason.findUnique({ where: { id: dto.seasonId } });
@@ -55,7 +66,7 @@ export class BonusPointsService {
     // Reflect bonus in the season's ranking entry
     await this.prisma.clubRankingEntry.updateMany({
       where: { clubId, seasonId: dto.seasonId, rosterId: dto.rosterId },
-      data:  { totalPoints: { increment: bonusType.points } },
+      data:  { totalPoints: { increment: award.points } },
     });
 
     // Re-sort ranks for this season
@@ -99,5 +110,12 @@ export class BonusPointsService {
     const club = await this.prisma.club.findUnique({ where: { id: clubId }, select: { id: true } });
     if (!club) throw new NotFoundException('Club not found');
     await assertClubScope(actor, clubId, this.prisma);
+  }
+
+  private async ensureBonusTypesSeeded(clubId: string) {
+    await this.prisma.clubBonusPointType.createMany({
+      data: DEFAULT_BONUS_TYPES.map(type => ({ ...type, clubId })),
+      skipDuplicates: true,
+    });
   }
 }

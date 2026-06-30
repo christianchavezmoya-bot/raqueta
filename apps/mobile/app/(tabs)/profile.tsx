@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
   ActivityIndicator, Image, Switch, TextInput,
 } from 'react-native';
+import type { ViewProps } from 'react-native';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,13 @@ const LEVEL_LABELS: Record<string, string> = {
 
 function initials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase();
+}
+
+function formatRenderable(value: unknown) {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number') return value.toLocaleString('es-CL');
+  if (value === null || value === undefined || value === '') return '0';
+  return String(value);
 }
 
 export default function ProfileScreen() {
@@ -184,7 +192,7 @@ export default function ProfileScreen() {
 
   const displayName = profile?.displayName ?? user?.email ?? 'Jugador';
   const rank = rankingEntry?.rank;
-  const division = home.activeMemberships?.[0]?.rosterEntry?.division;
+  const division = home.activeMemberships?.[0]?.roster?.division;
   const levelLabel = LEVEL_LABELS[profile?.level ?? ''] ?? 'Nivel Oro';
 
   return (
@@ -240,7 +248,7 @@ export default function ProfileScreen() {
           { label: 'Puntos',   value: rankingEntry?.totalPoints ?? stats?.rankingPoints ?? 0 },
         ].map(({ label, value }) => (
           <View key={label} style={s.statCell}>
-            <Text style={s.statValue}>{typeof value === 'number' ? value.toLocaleString('es-CL') : value}</Text>
+            <Text style={s.statValue}>{formatRenderable(value)}</Text>
             <Text style={s.statLabel}>{label}</Text>
           </View>
         ))}
@@ -252,7 +260,7 @@ export default function ProfileScreen() {
           <View style={s.card}>
             <Text style={s.cardTitle}>{myStats.statsCard.title}</Text>
             <Text style={s.cardSub}>
-              {myStats.statsCard.summary.matchesPlayed} partidos · {myStats.statsCard.summary.wins} victorias · {myStats.statsCard.summary.rankingPoints} pts
+              {formatRenderable(myStats.statsCard.summary.matchesPlayed)} partidos · {formatRenderable(myStats.statsCard.summary.wins)} victorias · {formatRenderable(myStats.statsCard.summary.rankingPoints)} pts
             </Text>
             <TouchableOpacity style={s.cardLink} onPress={() => router.push(`/player/${me?.id}` as any)}>
               <Ionicons name="open-outline" size={14} color={GOLD} />
@@ -344,7 +352,7 @@ export default function ProfileScreen() {
                 { v: profile.runAtpPointsCached ?? '?', l: 'ATP' },
               ].map(({ v, l }) => (
                 <View key={l} style={s.runStat}>
-                  <Text style={s.runStatValue}>{v}</Text>
+                  <Text style={s.runStatValue}>{v === '?' ? '?' : formatRenderable(v)}</Text>
                   <Text style={s.runStatLabel}>{l}</Text>
                 </View>
               ))}
@@ -517,7 +525,7 @@ export default function ProfileScreen() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ViewProps['children'] }) {
   return (
     <View style={s.section}>
       <Text style={s.sectionTitle}>{title}</Text>

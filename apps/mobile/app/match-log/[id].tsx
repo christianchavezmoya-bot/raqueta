@@ -5,8 +5,16 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 
 const TYPE_LABELS: Record<string, string> = {
-  MATCH: 'Partido', TRAINING: 'Entrenamiento', COACHING: 'Coaching', FITNESS: 'Físico',
+  MATCH: 'Partido',
+  PRACTICE: 'Partido casual',
+  TRAINING: 'Entrenamiento',
+  COACHING: 'Coaching',
+  FITNESS: 'Físico',
 };
+
+function isScoredMatch(type: string) {
+  return type === 'MATCH' || type === 'PRACTICE';
+}
 
 export default function MatchLogDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -81,8 +89,8 @@ export default function MatchLogDetailScreen() {
       </View>
 
       <View style={s.body}>
-        {/* Result banner for MATCH */}
-        {entry.type === 'MATCH' && entry.playerWon !== null && (
+        {/* Result banner for scored matches */}
+        {isScoredMatch(entry.type) && entry.playerWon !== null && entry.playerWon !== undefined && (
           <View style={[s.resultBanner, { backgroundColor: entry.playerWon ? '#f0fdf4' : '#fef2f2' }]}>
             <Text style={[s.resultText, { color: entry.playerWon ? '#16a34a' : '#dc2626' }]}>
               {entry.playerWon ? '🏆 Victoria' : '😤 Derrota'}
@@ -92,10 +100,12 @@ export default function MatchLogDetailScreen() {
 
         {/* Metadata */}
         <View style={s.metaCard}>
-          <Row icon="calendar-outline" label="Fecha" value={new Date(entry.playedAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })} />
-          {entry.opponentName && <Row icon="person-outline" label="Oponente" value={entry.opponentName} />}
-          {entry.surface && <Row icon="map-outline" label="Superficie" value={entry.surface} />}
-          {entry.type === 'MATCH' && <Row icon="settings-outline" label="Formato" value={`Al mejor de ${entry.bestOf ?? 3}`} />}
+          <Row icon="calendar-outline" label="Fecha" value={new Date(entry.date).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })} />
+          {(entry.opponent?.displayName ?? entry.opponentName) && (
+            <Row icon="person-outline" label="Oponente" value={entry.opponent?.displayName ?? entry.opponentName} />
+          )}
+          {entry.location && <Row icon="map-outline" label="Lugar / superficie" value={entry.location} />}
+          {isScoredMatch(entry.type) && <Row icon="settings-outline" label="Formato" value={`Al mejor de ${entry.bestOf ?? 3}`} />}
         </View>
 
         {/* Sets score */}

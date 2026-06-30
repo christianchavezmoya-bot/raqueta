@@ -96,14 +96,14 @@ export class InvitationsService {
       this.prisma.matchInvitation.findMany({
         where: { recipientId: profile.id },
         include: {
-          requester: { select: { displayName: true, level: true, profilePhotoUrl: true, showPhotoInSearch: true } },
+          requester: { select: { userId: true, displayName: true, level: true, profilePhotoUrl: true, showPhotoInSearch: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.matchInvitation.findMany({
         where: { requesterId: profile.id },
         include: {
-          recipient: { select: { displayName: true, level: true, profilePhotoUrl: true, showPhotoInSearch: true } },
+          recipient: { select: { userId: true, displayName: true, level: true, profilePhotoUrl: true, showPhotoInSearch: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),

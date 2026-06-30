@@ -3,25 +3,39 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 
-const TYPES = ['MATCH', 'TRAINING', 'COACHING', 'FITNESS'] as const;
+const TYPES = ['MATCH', 'PRACTICE', 'TRAINING', 'COACHING', 'FITNESS'] as const;
 type EntryType = typeof TYPES[number];
 
 const TYPE_LABELS: Record<EntryType, string> = {
-  MATCH: 'Partido', TRAINING: 'Entrenamiento', COACHING: 'Coaching', FITNESS: 'Físico',
+  MATCH: 'Partido',
+  PRACTICE: 'Partido casual',
+  TRAINING: 'Entrenamiento',
+  COACHING: 'Coaching',
+  FITNESS: 'Físico',
 };
 
 export default function AddMatchLogScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const params = useLocalSearchParams<{
+    invitationId?: string;
+    opponentId?: string;
+    opponentName?: string;
+    type?: EntryType;
+  }>();
+  const invitationId = typeof params.invitationId === 'string' ? params.invitationId : undefined;
+  const invitationOpponentId = typeof params.opponentId === 'string' ? params.opponentId : undefined;
+  const invitationOpponentName = typeof params.opponentName === 'string' ? params.opponentName : '';
+  const initialType = params.type === 'PRACTICE' ? 'PRACTICE' : 'MATCH';
 
-  const [type, setType] = useState<EntryType>('MATCH');
+  const [type, setType] = useState<EntryType>(initialType);
   const [playedAt, setPlayedAt] = useState(() => new Date().toISOString().split('T')[0]);
-  const [opponentName, setOpponentName] = useState('');
+  const [opponentName, setOpponentName] = useState(invitationOpponentName);
   const [surface, setSurface] = useState('');
   const [bestOf, setBestOf] = useState<3 | 5>(3);
   // Sets: array of { myGames, opponentGames, myTiebreak?, opponentTiebreak? }
@@ -40,16 +54,19 @@ export default function AddMatchLogScreen() {
     mutationFn: async (payload: any) => { const { data } = await api.post('/players/me/match-log', payload); return data; },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['match-log'] });
+      qc.invalidateQueries({ queryKey: ['my-invitations'] });
       Alert.alert('Registrado', 'Entrada agregada correctamente', [{ text: 'OK', onPress: () => router.back() }]);
     },
     onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo guardar'),
   });
 
   const handleSave = () => {
-    const payload: any = { type, playedAt, notes: notes || undefined };
-    if (type === 'MATCH') {
-      payload.opponentName = opponentName || undefined;
-      payload.surface = surface || undefined;
+    const payload: any = { type, date: playedAt, notes: notes || undefined };
+    const isScoredMatch = type === 'MATCH' || type === 'PRACTICE';
+    if (isScoredMatch) {
+      payload.opponentId = invitationOpponentId || undefined;
+      payload.opponentName = invitationOpponentId ? undefined : opponentName || undefined;
+      payload.location = surface || undefined;
       payload.bestOf = bestOf;
       const setsData = sets
         .filter(s => s.my !== '' && s.opp !== '')
@@ -65,7 +82,7 @@ export default function AddMatchLogScreen() {
         Alert.alert('Sets requeridos', 'Ingresa al menos un set para registrar un partido');
         return;
       }
-      payload.setsData = setsData;
+      payload.sets = setsData;
     }
     mutation.mutate(payload);
   };
@@ -90,7 +107,8 @@ export default function AddMatchLogScreen() {
             <TouchableOpacity
               key={t}
               style={[s.typeBtn, type === t && s.typeBtnActive]}
-              onPress={() => setType(t)}
+              onPress={() => !invitationId && setType(t)}
+              disabled={!!invitationId}
             >
               <Text style={[s.typeBtnText, type === t && s.typeBtnTextActive]}>{TYPE_LABELS[t]}</Text>
             </TouchableOpacity>
@@ -107,13 +125,20 @@ export default function AddMatchLogScreen() {
           placeholderTextColor="#9ca3af"
         />
 
-        {type === 'MATCH' && (
+        {(type === 'MATCH' || type === 'PRACTICE') && (
           <>
-            <Text style={s.label}>Oponente (opcional)</Text>
-            <TextInput style={s.input} value={opponentName} onChangeText={setOpponentName} placeholder="Nombre del oponente" placeholderTextColor="#9ca3af" />
+            <Text style={s.label}>Oponente</Text>
+            {invitationOpponentId ? (
+              <View style={s.lockedField}>
+                <Ionicons name="people-outline" size={18} color="#374151" />
+                <Text style={s.lockedFieldText}>{opponentName || 'Invitación aceptada'}</Text>
+              </View>
+            ) : (
+              <TextInput style={s.input} value={opponentName} onChangeText={setOpponentName} placeholder="Nombre del oponente" placeholderTextColor="#9ca3af" />
+            )}
 
             <Text style={s.label}>Superficie (opcional)</Text>
-            <TextInput style={s.input} value={surface} onChangeText={setSurface} placeholder="Arcilla, Dura, Césped..." placeholderTextColor="#9ca3af" />
+            <TextInput testID="match-log-surface-input" style={s.input} value={surface} onChangeText={setSurface} placeholder="Arcilla, Dura, Césped..." placeholderTextColor="#9ca3af" />
 
             <Text style={s.label}>Formato</Text>
             <View style={s.typeRow}>
@@ -139,6 +164,7 @@ export default function AddMatchLogScreen() {
               <View key={i} style={s.setRow}>
                 <Text style={s.setLabel}>Set {i + 1}</Text>
                 <TextInput
+                  testID={`match-log-set-${i + 1}-my`}
                   style={s.setInput}
                   value={set.my}
                   onChangeText={v => updateSet(i, 'my', v.replace(/\D/g, ''))}
@@ -149,6 +175,7 @@ export default function AddMatchLogScreen() {
                 />
                 <Text style={s.dash}>–</Text>
                 <TextInput
+                  testID={`match-log-set-${i + 1}-opp`}
                   style={s.setInput}
                   value={set.opp}
                   onChangeText={v => updateSet(i, 'opp', v.replace(/\D/g, ''))}
@@ -161,6 +188,7 @@ export default function AddMatchLogScreen() {
                   <>
                     <Text style={s.tbLabel}>(TB)</Text>
                     <TextInput
+                      testID={`match-log-set-${i + 1}-mytb`}
                       style={s.tbInput}
                       value={set.myTb}
                       onChangeText={v => updateSet(i, 'myTb', v.replace(/\D/g, ''))}
@@ -171,6 +199,7 @@ export default function AddMatchLogScreen() {
                     />
                     <Text style={s.dash}>–</Text>
                     <TextInput
+                      testID={`match-log-set-${i + 1}-opptb`}
                       style={s.tbInput}
                       value={set.oppTb}
                       onChangeText={v => updateSet(i, 'oppTb', v.replace(/\D/g, ''))}
@@ -193,15 +222,17 @@ export default function AddMatchLogScreen() {
 
         <Text style={s.label}>Notas (opcional)</Text>
         <TextInput
+          testID="match-log-notes-input"
           style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]}
           value={notes}
           onChangeText={setNotes}
-          placeholder="Cómo fue el partido, sensaciones..."
+          placeholder={invitationId ? 'Cómo terminó el partido casual, detalles clave...' : 'Cómo fue el partido, sensaciones...'}
           placeholderTextColor="#9ca3af"
           multiline
         />
 
         <TouchableOpacity
+          testID="match-log-save-button"
           style={[s.saveBtn, mutation.isPending && { opacity: 0.6 }]}
           onPress={handleSave}
           disabled={mutation.isPending}
@@ -225,6 +256,8 @@ const s = StyleSheet.create({
   body: { padding: 16 },
   label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 14 },
   input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111827', backgroundColor: '#fff' },
+  lockedField: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#f3f4f6' },
+  lockedFieldText: { fontSize: 15, color: '#111827', fontWeight: '600' },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typeBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#fff' },
   typeBtnActive: { backgroundColor: '#16a34a', borderColor: '#16a34a' },

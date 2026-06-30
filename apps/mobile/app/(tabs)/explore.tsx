@@ -110,7 +110,8 @@ export default function ExploreScreen() {
 
   const pendingReceived = invitations?.received?.filter((item: any) => item.status === 'PENDING') ?? [];
   const accepted = invitations?.received?.filter((item: any) => item.status === 'ACCEPTED') ?? [];
-  const sent = invitations?.sent ?? [];
+  const sentAccepted = invitations?.sent?.filter((item: any) => item.status === 'ACCEPTED') ?? [];
+  const sent = invitations?.sent?.filter((item: any) => item.status !== 'ACCEPTED') ?? [];
 
   const ensureSearchLocation = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -155,7 +156,7 @@ export default function ExploreScreen() {
 
         <View style={s.tabs}>
           {(['clubs', 'players', 'invitations'] as const).map(item => (
-            <TouchableOpacity key={item} style={[s.tab, tab === item && s.tabActive]} onPress={() => setTab(item)}>
+            <TouchableOpacity key={item} testID={`explore-tab-${item}`} style={[s.tab, tab === item && s.tabActive]} onPress={() => setTab(item)}>
               <Text style={[s.tabText, tab === item && s.tabTextActive]}>
                 {item === 'clubs' ? 'Clubes' : item === 'players' ? 'Jugadores' : 'Invitaciones'}
               </Text>
@@ -337,6 +338,7 @@ export default function ExploreScreen() {
           data={[
             ...pendingReceived.map((item: any) => ({ ...item, _section: 'received' })),
             ...accepted.map((item: any) => ({ ...item, _section: 'accepted' })),
+            ...sentAccepted.map((item: any) => ({ ...item, _section: 'sentAccepted' })),
             ...sent.map((item: any) => ({ ...item, _section: 'sent' })),
           ]}
           keyExtractor={(item: any) => item.id + item._section}
@@ -379,6 +381,46 @@ export default function ExploreScreen() {
                     Partido aceptado con <Text style={s.invName}>{invitation.requester?.displayName}</Text>
                   </Text>
                   {invitation.requester?.phone && <Text style={s.phoneText}>📞 {invitation.requester.phone}</Text>}
+                  <TouchableOpacity
+                    testID="accepted-invitation-log-result"
+                    style={s.logResultBtn}
+                    onPress={() => router.push({
+                      pathname: '/match-log/add',
+                      params: {
+                        invitationId: invitation.id,
+                        opponentId: invitation.requester?.userId,
+                        opponentName: invitation.requester?.displayName,
+                        type: 'PRACTICE',
+                      },
+                    } as any)}
+                  >
+                    <Ionicons name="create-outline" size={16} color="#fff" />
+                    <Text style={s.logResultBtnText}>Registrar resultado</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              {invitation._section === 'sentAccepted' && (
+                <>
+                  <Text style={s.invTitle}>
+                    Partido aceptado con <Text style={s.invName}>{invitation.recipient?.displayName}</Text>
+                  </Text>
+                  {invitation.recipient?.phone && <Text style={s.phoneText}>📞 {invitation.recipient.phone}</Text>}
+                  <TouchableOpacity
+                    testID="sent-accepted-invitation-log-result"
+                    style={s.logResultBtn}
+                    onPress={() => router.push({
+                      pathname: '/match-log/add',
+                      params: {
+                        invitationId: invitation.id,
+                        opponentId: invitation.recipient?.userId,
+                        opponentName: invitation.recipient?.displayName,
+                        type: 'PRACTICE',
+                      },
+                    } as any)}
+                  >
+                    <Ionicons name="create-outline" size={16} color="#fff" />
+                    <Text style={s.logResultBtnText}>Registrar resultado</Text>
+                  </TouchableOpacity>
                 </>
               )}
               {invitation._section === 'sent' && (
@@ -523,6 +565,8 @@ const s = StyleSheet.create({
   declineBtn: { flex: 1, borderWidth: 1.5, borderColor: '#fca5a5', backgroundColor: '#fff1f2', borderRadius: 10, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   declineBtnText: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
   phoneText: { fontSize: 14, fontWeight: '600', color: '#1b4a86', marginTop: 6 },
+  logResultBtn: { marginTop: 12, alignSelf: 'flex-start', backgroundColor: '#1b4a86', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logResultBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   favBtn: { padding: 6, marginRight: 4 },
 });
 

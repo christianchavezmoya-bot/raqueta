@@ -598,7 +598,7 @@ export class ClubRankingsService {
       });
       for (const award of bonusAwards) {
         const cur = totals.get(award.rosterId) ?? { totalPoints: 0, gamesPlayed: 0 };
-        cur.totalPoints += award.bonusType.points;
+        cur.totalPoints += award.points;
         totals.set(award.rosterId, cur);
       }
     }

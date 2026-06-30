@@ -27,6 +27,13 @@ export interface MyMembershipLite {
   id: string;
   status: string;
   club?: { id: string; name: string } | null;
+  roster?: {
+    id: string;
+    division?: string | null;
+    linkedPlayerProfileId?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null;
 }
 
 export function useMyMembershipsLite() {

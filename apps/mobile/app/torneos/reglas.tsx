@@ -20,7 +20,7 @@ export default function ReglasScreen() {
     queryKey: ['bonus-types', firstClubId],
     queryFn: async () => {
       if (!firstClubId) return [];
-      const { data } = await api.get(`/clubs/${firstClubId}/bonus-point-types`);
+      const { data } = await api.get(`/clubs/${firstClubId}/bonus-points/types`);
       return Array.isArray(data) ? data : [];
     },
     enabled: !!firstClubId,
