@@ -22,23 +22,25 @@ Notifications.setNotificationHandler({
 });
 
 async function registerPushToken() {
-  // Push notifications only work on physical devices
   if (Platform.OS === 'web') return;
 
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
 
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
 
-  if (finalStatus !== 'granted') return;
+    if (finalStatus !== 'granted') return;
 
-  const { data: token } = await Notifications.getExpoPushTokenAsync();
-  if (token) {
-    // Best-effort: may fail if user is not logged in yet
-    await api.post('/notifications/push-token', { token }).catch(() => {});
+    const { data: token } = await Notifications.getExpoPushTokenAsync();
+    if (token) {
+      await api.post('/notifications/push-token', { token }).catch(() => {});
+    }
+  } catch {
+    // Silently ignored — fails on dev builds without aps-environment entitlement
   }
 }
 
