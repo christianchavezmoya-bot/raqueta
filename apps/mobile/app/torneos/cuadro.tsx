@@ -2,7 +2,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import { useHomeState } from '../../src/hooks/use-home-state';
@@ -230,18 +230,30 @@ export default function CuadroTorneoScreen() {
   const { user } = useAuthStore();
   const firstClubId = home.activeMemberships?.[0]?.club?.id;
 
-  const { data: tournaments, isLoading } = useQuery({
+  // tournamentId may be passed from /torneos/torneo/[id] so the bracket always
+  // shows the tournament the user just navigated from, not whichever is globally
+  // "active" (relevant once a club runs more than one concurrent tournament).
+  const { tournamentId: paramId } = useLocalSearchParams<{ tournamentId?: string }>();
+
+  // Only fetch the list when no explicit ID was passed in.
+  const { data: tournaments, isLoading: listLoading } = useQuery({
     queryKey: ['tournaments-cuadro'],
     queryFn: async () => {
       const { data } = await api.get('/tournaments');
       return Array.isArray(data) ? data : [];
     },
+    enabled: !paramId,
   });
 
-  const activeTournament =
-    tournaments?.find((t: any) => t.status === 'IN_PROGRESS') ??
-    tournaments?.find((t: any) => t.status === 'REGISTRATION_OPEN') ??
-    tournaments?.[0];
+  const activeTournament = paramId
+    ? { id: paramId, categories: [] as any[], name: '' }
+    : (
+        tournaments?.find((t: any) => t.status === 'IN_PROGRESS') ??
+        tournaments?.find((t: any) => t.status === 'REGISTRATION_OPEN') ??
+        tournaments?.[0]
+      );
+
+  const isLoading = !paramId && listLoading;
 
   const { data: bracket } = useQuery({
     queryKey: ['tournament-bracket', activeTournament?.id],
