@@ -35,6 +35,14 @@ export class TournamentsController {
     return this.tournamentsService.findOne(id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('tournaments/:id/bracket')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get tournament bracket data for an authorized participant or scoped staff user' })
+  getBracket(@Param('id') id: string, @CurrentUser() actor: ActingUser) {
+    return this.tournamentsService.getBracket(id, actor);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN, Role.CLUB_ADMIN, Role.MANAGER)
   @Post('clubs/:clubId/tournaments')
@@ -204,5 +212,13 @@ export class TournamentsController {
     res.setHeader('Content-Disposition', `attachment; filename="raqueta-template-${clubId}.xlsx"`);
     res.setHeader('Content-Length', String(buf.length));
     res.end(buf);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('clubs/:clubId/liga-promocion')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get Liga Promoción standings, fixtures, and next match for the current player or scoped staff' })
+  getLigaPromocion(@Param('clubId') clubId: string, @CurrentUser() actor: ActingUser) {
+    return this.tournamentsService.getLigaPromocion(clubId, actor);
   }
 }

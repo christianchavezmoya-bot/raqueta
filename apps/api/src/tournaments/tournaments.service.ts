@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ClubMatchResultSource, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { assertCanActForPlayer } from '../common/utils/transact-gate';
+import { ActingUser, assertClubScope } from '../common/utils/club-scope';
+import { PROMOTE_COUNT, RELEGATE_COUNT } from '../clubs/seasons/seasons.service';
 
 @Injectable()
 export class TournamentsService {
@@ -452,9 +454,411 @@ export class TournamentsService {
     return { notified: targetUserIds.length };
   }
 
+  async getBracket(tournamentId: string, actor: ActingUser) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: {
+          include: {
+            roster: {
+              include: {
+                linkedPlayerProfile: { select: { userId: true, displayName: true } },
+              },
+            },
+            team: {
+              include: {
+                player1Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+                player2Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+              },
+            },
+          },
+          orderBy: { registeredAt: 'asc' },
+        },
+        matches: {
+          include: {
+            playerOneRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+            playerTwoRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+            winnerRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+            teamOne: {
+              include: {
+                player1Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+                player2Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+              },
+            },
+            teamTwo: {
+              include: {
+                player1Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+                player2Roster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+              },
+            },
+          },
+          orderBy: [{ bracketStage: 'asc' }, { round: 'asc' }, { scheduledTime: 'asc' }],
+        },
+      },
+    });
+    if (!tournament) throw new NotFoundException('Tournament not found');
+
+    await this.assertTournamentAccess(tournament, actor);
+
+    const participants = tournament.registrations.map(registration => {
+      if (registration.team) {
+        const team = registration.team;
+        return {
+          type: 'TEAM',
+          rosterId: null,
+          teamId: team.id,
+          memberRosterIds: [team.player1RosterId, team.player2RosterId],
+          name: this.teamName(team),
+        };
+      }
+      return {
+        type: 'PLAYER',
+        rosterId: registration.rosterId,
+        teamId: null,
+        memberRosterIds: registration.rosterId ? [registration.rosterId] : [],
+        name: this.rosterName(registration.roster),
+      };
+    });
+
+    if (!tournament.matches.length) {
+      return {
+        tournamentId: tournament.id,
+        format: tournament.format,
+        rounds: [],
+        registrationOnly: true,
+        participants,
+      };
+    }
+
+    const grouped = new Map<string, {
+      round: string;
+      label: string;
+      bracketStage: string;
+      sortKey: number;
+      matches: any[];
+    }>();
+
+    for (const match of tournament.matches) {
+      const round = (match.round ?? 'R1').toUpperCase();
+      const key = `${match.bracketStage}:${round}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          round,
+          label: this.roundLabel(round),
+          bracketStage: match.bracketStage,
+          sortKey: this.bracketRoundSort(match.bracketStage, round),
+          matches: [],
+        });
+      }
+
+      const playerOne = match.teamOne
+        ? {
+            name: this.teamName(match.teamOne),
+            rosterId: null,
+            teamId: match.teamOne.id,
+            memberRosterIds: [match.teamOne.player1RosterId, match.teamOne.player2RosterId],
+          }
+        : {
+            name: this.rosterName(match.playerOneRoster),
+            rosterId: match.playerOneRosterId,
+            teamId: null,
+            memberRosterIds: match.playerOneRosterId ? [match.playerOneRosterId] : [],
+          };
+
+      const playerTwo = match.teamTwo
+        ? {
+            name: this.teamName(match.teamTwo),
+            rosterId: null,
+            teamId: match.teamTwo.id,
+            memberRosterIds: [match.teamTwo.player1RosterId, match.teamTwo.player2RosterId],
+          }
+        : {
+            name: this.rosterName(match.playerTwoRoster),
+            rosterId: match.playerTwoRosterId,
+            teamId: null,
+            memberRosterIds: match.playerTwoRosterId ? [match.playerTwoRosterId] : [],
+          };
+
+      grouped.get(key)!.matches.push({
+        id: match.id,
+        playerOne,
+        playerTwo,
+        winnerRosterId: match.winnerRosterId,
+        winnerTeamId: match.teamWinnerId,
+        winnerSide: match.winnerRosterId
+          ? match.winnerRosterId === match.playerOneRosterId ? 'ONE' : match.winnerRosterId === match.playerTwoRosterId ? 'TWO' : null
+          : match.teamWinnerId
+            ? match.teamWinnerId === match.teamOneId ? 'ONE' : match.teamWinnerId === match.teamTwoId ? 'TWO' : null
+            : null,
+        setScores: match.setScores,
+        status: this.mobileMatchStatus(match.status),
+        scheduledTime: match.scheduledTime,
+      });
+    }
+
+    const rounds = Array.from(grouped.values())
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ sortKey: _sortKey, ...round }) => round);
+
+    return {
+      tournamentId: tournament.id,
+      format: tournament.format,
+      rounds,
+      registrationOnly: false,
+      participants,
+    };
+  }
+
+  async getLigaPromocion(clubId: string, actor: ActingUser) {
+    const playerRoster = await this.resolvePlayerRosterOrScopedStaff(clubId, actor);
+    const season = await this.prisma.rankingSeason.findFirst({
+      where: { clubId, status: 'ACTIVE' },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    if (!season) return { active: false };
+
+    await this.ensureRankingRule(clubId, 'LIG', 'Liga Promoción', 30, 0);
+
+    const tournament = await this.prisma.tournament.findFirst({
+      where: {
+        clubId,
+        format: 'ROUND_ROBIN',
+        status: { in: ['IN_PROGRESS', 'REGISTRATION_OPEN'] },
+        endDate: { gte: season.startedAt },
+      },
+      include: {
+        matches: {
+          include: {
+            court: true,
+            playerOneRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+            playerTwoRoster: { include: { linkedPlayerProfile: { select: { displayName: true } } } },
+          },
+          orderBy: [{ scheduledTime: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+
+    if (!tournament) return { active: false };
+
+    const rule = await this.prisma.clubRankingRule.findUnique({
+      where: { clubId_categoryKey: { clubId, categoryKey: 'LIG' } },
+    });
+    const winnerPoints = rule?.winnerPoints ?? 0;
+    const loserPoints = rule?.loserPoints ?? 0;
+
+    const totals = new Map<string, {
+      rosterId: string;
+      name: string;
+      played: number;
+      wins: number;
+      losses: number;
+      points: number;
+    }>();
+
+    const touch = (rosterId: string | null, name: string) => {
+      if (!rosterId) return null;
+      if (!totals.has(rosterId)) {
+        totals.set(rosterId, { rosterId, name, played: 0, wins: 0, losses: 0, points: 0 });
+      }
+      return totals.get(rosterId)!;
+    };
+
+    const fixtures = tournament.matches.map(match => {
+      const playerOneName = this.rosterName(match.playerOneRoster);
+      const playerTwoName = this.rosterName(match.playerTwoRoster);
+      const completed = !!match.winnerRosterId || match.status === 'COMPLETED' || match.status === 'WALKOVER';
+
+      const playerOne = touch(match.playerOneRosterId, playerOneName);
+      const playerTwo = touch(match.playerTwoRosterId, playerTwoName);
+
+      if (completed) {
+        if (playerOne) playerOne.played += 1;
+        if (playerTwo) playerTwo.played += 1;
+        if (match.winnerRosterId && playerOne && playerTwo) {
+          if (match.winnerRosterId === match.playerOneRosterId) {
+            playerOne.wins += 1;
+            playerTwo.losses += 1;
+            playerOne.points += winnerPoints;
+            playerTwo.points += loserPoints;
+          } else if (match.winnerRosterId === match.playerTwoRosterId) {
+            playerTwo.wins += 1;
+            playerOne.losses += 1;
+            playerTwo.points += winnerPoints;
+            playerOne.points += loserPoints;
+          }
+        }
+      }
+
+      return {
+        id: match.id,
+        playerOneName,
+        playerTwoName,
+        playerOneRosterId: match.playerOneRosterId,
+        playerTwoRosterId: match.playerTwoRosterId,
+        scheduledTime: match.scheduledTime,
+        court: match.court?.name ?? null,
+        status: completed ? 'COMPLETED' : 'PENDING',
+        round: match.round ?? null,
+        setScores: match.setScores,
+        winnerRosterId: match.winnerRosterId,
+      };
+    });
+
+    const standings = Array.from(totals.values())
+      .sort((a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name, 'es'))
+      .map((entry, index, arr) => {
+        const promotionCutoff = Math.min(PROMOTE_COUNT, arr.length);
+        const relegationStart = Math.max(arr.length - RELEGATE_COUNT, promotionCutoff);
+        const zone = index < promotionCutoff
+          ? 'PROMOTION'
+          : index >= relegationStart
+            ? 'RELEGATION'
+            : null;
+
+        return {
+          position: index + 1,
+          rosterId: entry.rosterId,
+          name: entry.name,
+          played: entry.played,
+          wins: entry.wins,
+          losses: entry.losses,
+          points: entry.points,
+          zone,
+        };
+      });
+
+    const nextMatch = playerRoster
+      ? fixtures.find(match =>
+          match.status === 'PENDING' &&
+          (match.playerOneRosterId === playerRoster.id || match.playerTwoRosterId === playerRoster.id),
+        )
+      : null;
+
+    const nextMatchPayload = nextMatch
+      ? {
+          opponentName: nextMatch.playerOneRosterId === playerRoster?.id ? nextMatch.playerTwoName : nextMatch.playerOneName,
+          scheduledTime: nextMatch.scheduledTime,
+          court: nextMatch.court,
+        }
+      : null;
+
+    return {
+      active: true,
+      tournament: {
+        id: tournament.id,
+        name: tournament.name,
+        currentRound: nextMatch?.round ?? tournament.matches.find(match => match.status === 'SCHEDULED')?.round ?? tournament.matches.at(-1)?.round ?? null,
+      },
+      standings,
+      nextMatch: nextMatchPayload,
+      fixtures,
+    };
+  }
+
   private async ensureExists(id: string) {
     const t = await this.prisma.tournament.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Tournament not found');
     return t;
+  }
+
+  private async assertTournamentAccess(
+    tournament: any,
+    actor: ActingUser,
+  ) {
+    if (actor.role === 'SUPER_ADMIN') return;
+    if (actor.staffClubId === tournament.clubId || actor.role === 'CLUB_ADMIN') {
+      try {
+        await assertClubScope(actor, tournament.clubId, this.prisma);
+        return;
+      } catch {
+        // Fall through to player-level tournament access.
+      }
+    }
+
+    const hasRegistration = tournament.registrations.some(registration =>
+      registration.roster?.linkedPlayerProfile?.userId === actor.id ||
+      registration.team?.player1Roster?.linkedPlayerProfile?.userId === actor.id ||
+      registration.team?.player2Roster?.linkedPlayerProfile?.userId === actor.id,
+    );
+
+    if (!hasRegistration) {
+      throw new ForbiddenException('You do not have access to this tournament bracket');
+    }
+  }
+
+  private roundLabel(round: string) {
+    switch (round) {
+      case 'QF': return 'Cuartos de Final';
+      case 'SF': return 'Semifinales';
+      case 'F':
+      case 'FINAL': return 'Final';
+      default: return round;
+    }
+  }
+
+  private bracketRoundSort(stage: string, round: string) {
+    const stageOrder = new Map([['MAIN', 0], ['WINNERS', 100], ['LOSERS', 200]]);
+    const roundOrder = new Map([
+      ['R1', 1],
+      ['R2', 2],
+      ['R3', 3],
+      ['QF', 10],
+      ['SF', 20],
+      ['F', 30],
+      ['FINAL', 30],
+    ]);
+    return (stageOrder.get(stage) ?? 999) + (roundOrder.get(round) ?? 90);
+  }
+
+  private rosterName(
+    roster?: {
+      firstName?: string | null;
+      lastName?: string | null;
+      linkedPlayerProfile?: { displayName?: string | null } | null;
+    } | null,
+  ) {
+    if (!roster) return 'TBD';
+    return (
+      (roster.linkedPlayerProfile?.displayName ??
+      `${roster.firstName ?? ''} ${roster.lastName ?? ''}`.trim()) ||
+      'TBD'
+    );
+  }
+
+  private teamName(team: {
+    player1Roster: { firstName?: string | null; lastName?: string | null; linkedPlayerProfile?: { displayName?: string | null } | null };
+    player2Roster: { firstName?: string | null; lastName?: string | null; linkedPlayerProfile?: { displayName?: string | null } | null };
+  }) {
+    return `${this.rosterName(team.player1Roster)} / ${this.rosterName(team.player2Roster)}`;
+  }
+
+  private mobileMatchStatus(status: string) {
+    return status === 'COMPLETED' || status === 'WALKOVER' ? 'COMPLETED' : 'PENDING';
+  }
+
+  private async resolvePlayerRosterOrScopedStaff(clubId: string, actor: ActingUser) {
+    const roster = await this.prisma.clubPlayerRoster.findFirst({
+      where: { clubId, linkedPlayerProfile: { userId: actor.id } },
+    });
+    if (roster) return roster;
+
+    await assertClubScope(actor, clubId, this.prisma);
+    return null;
+  }
+
+  private async ensureRankingRule(
+    clubId: string,
+    categoryKey: string,
+    label: string,
+    winnerPoints: number,
+    loserPoints: number,
+  ) {
+    await this.prisma.clubRankingRule.upsert({
+      where: { clubId_categoryKey: { clubId, categoryKey } },
+      create: { clubId, categoryKey, label, winnerPoints, loserPoints, active: true },
+      update: {},
+    });
   }
 }

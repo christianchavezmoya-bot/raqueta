@@ -19,7 +19,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       router.push('/dashboard');
     } catch (err: any) {
-      toast.error(err.response?.data?.message ?? 'Credenciales inválidas');
+      toast.error(err.response?.data?.message ?? 'No se pudo conectar con el servidor');
     } finally {
       setLoading(false);
     }

@@ -30,12 +30,9 @@ export default function LigaPromocionScreen() {
     enabled: !!firstClubId,
   });
 
-  const standings: any[] = liga?.standings ?? PLACEHOLDER_STANDINGS;
-  const matches: any[] = liga?.matches ?? [];
-
-  const promotionCount = liga?.promotionCount ?? 2;
-  const relegationCount = liga?.relegationCount ?? 1;
-  const totalPlayers = standings.length;
+  const standings: any[] = liga?.standings ?? [];
+  const matches: any[] = liga?.fixtures ?? [];
+  const active = liga?.active !== false;
 
   return (
     <View style={s.container}>
@@ -55,6 +52,17 @@ export default function LigaPromocionScreen() {
         <View style={s.legendItem}><View style={[s.legendDot, { backgroundColor: RED }]} /><Text style={s.legendText}>Desciende</Text></View>
       </View>
 
+      {active && liga?.nextMatch ? (
+        <View style={s.nextMatchCard}>
+          <Text style={s.nextMatchLabel}>Próximo partido</Text>
+          <Text style={s.nextMatchTitle}>{liga.nextMatch.opponentName}</Text>
+          <Text style={s.nextMatchSub}>
+            {liga.nextMatch.scheduledTime ? new Date(liga.nextMatch.scheduledTime).toLocaleString('es-CL') : 'Horario por confirmar'}
+            {liga.nextMatch.court ? ` · ${liga.nextMatch.court}` : ''}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Tabs */}
       <View style={s.tabsRow}>
         {TABS.map(t => (
@@ -71,12 +79,13 @@ export default function LigaPromocionScreen() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {isLoading ? (
           <ActivityIndicator color={GOLD} style={{ marginTop: 40 }} />
+        ) : !active ? (
+          <View style={s.empty}>
+            <Ionicons name="flag-outline" size={36} color={SUB} />
+            <Text style={s.emptyText}>No hay Liga Promoción activa este período</Text>
+          </View>
         ) : activeTab === 'TABLA' ? (
-          <StandingsTable
-            standings={standings}
-            promotionCount={promotionCount}
-            relegationCount={relegationCount}
-          />
+          <StandingsTable standings={standings} />
         ) : (
           <MatchList matches={matches} onPress={(id) => router.push(`/torneos/partido/${id}` as any)} />
         )}
@@ -85,12 +94,7 @@ export default function LigaPromocionScreen() {
   );
 }
 
-function StandingsTable({ standings, promotionCount, relegationCount }: {
-  standings: any[];
-  promotionCount: number;
-  relegationCount: number;
-}) {
-  const total = standings.length;
+function StandingsTable({ standings }: { standings: any[] }) {
   return (
     <View style={st.table}>
       {/* Header */}
@@ -103,20 +107,20 @@ function StandingsTable({ standings, promotionCount, relegationCount }: {
       </View>
 
       {standings.map((p: any, i: number) => {
-        const isPromotion = i < promotionCount;
-        const isRelegation = i >= total - relegationCount;
+        const isPromotion = p.zone === 'PROMOTION';
+        const isRelegation = p.zone === 'RELEGATION';
         const rowBg = isPromotion ? '#22c55e14' : isRelegation ? '#ef444414' : 'transparent';
         const textColor = isPromotion ? GREEN : isRelegation ? RED : TEXT;
 
         return (
           <View key={p.rosterId ?? i} style={[st.row, { backgroundColor: rowBg }]}>
             <View style={[st.posBadge, { flex: 0.5 }, isPromotion && st.posBadgeGreen, isRelegation && st.posBadgeRed]}>
-              <Text style={[st.posText, { color: textColor }]}>{i + 1}</Text>
+              <Text style={[st.posText, { color: textColor }]}>{p.position ?? i + 1}</Text>
             </View>
-            <Text style={[st.name, { flex: 3, color: textColor }]} numberOfLines={1}>{p.playerName ?? 'Jugador'}</Text>
-            <Text style={[st.cell, { flex: 0.7 }]}>{p.pj ?? 0}</Text>
-            <Text style={[st.cell, { flex: 0.7 }]}>{p.w ?? 0}</Text>
-            <Text style={[st.pts, { flex: 1, color: textColor }]}>{p.pts ?? 0}</Text>
+            <Text style={[st.name, { flex: 3, color: textColor }]} numberOfLines={1}>{p.name ?? 'Jugador'}</Text>
+            <Text style={[st.cell, { flex: 0.7 }]}>{p.played ?? 0}</Text>
+            <Text style={[st.cell, { flex: 0.7 }]}>{p.wins ?? 0}</Text>
+            <Text style={[st.pts, { flex: 1, color: textColor }]}>{p.points ?? 0}</Text>
           </View>
         );
       })}
@@ -136,7 +140,7 @@ function MatchList({ matches, onPress }: { matches: any[]; onPress: (id: string)
   return (
     <View style={{ gap: 10 }}>
       {matches.map((m: any, i: number) => {
-        const isPast = new Date(m.scheduledAt ?? m.playedAt ?? 0).getTime() < Date.now();
+        const isPast = m.status === 'COMPLETED';
         return (
           <TouchableOpacity
             key={m.id ?? i}
@@ -146,8 +150,11 @@ function MatchList({ matches, onPress }: { matches: any[]; onPress: (id: string)
           >
             <View style={{ flex: 1 }}>
               <Text style={ml.label}>{isPast ? 'Partido jugado' : 'Próximo partido'}</Text>
-              <Text style={ml.players}>{m.player1Name ?? 'J1'} vs {m.player2Name ?? 'J2'}</Text>
-              {m.scoreLabel && <Text style={ml.score}>{m.scoreLabel}</Text>}
+              <Text style={ml.players}>{m.playerOneName ?? 'J1'} vs {m.playerTwoName ?? 'J2'}</Text>
+              <Text style={ml.score}>
+                {m.scheduledTime ? new Date(m.scheduledTime).toLocaleString('es-CL') : 'Horario por confirmar'}
+                {m.court ? ` · ${m.court}` : ''}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={SUB} />
           </TouchableOpacity>
@@ -156,14 +163,6 @@ function MatchList({ matches, onPress }: { matches: any[]; onPress: (id: string)
     </View>
   );
 }
-
-const PLACEHOLDER_STANDINGS = [
-  { playerName: 'Raúl Méndez',   pj: 5, w: 5, pts: 15 },
-  { playerName: 'David Castillo', pj: 5, w: 4, pts: 12 },
-  { playerName: 'Rafael Labbe',  pj: 5, w: 3, pts: 9 },
-  { playerName: 'Matías García', pj: 5, w: 2, pts: 6 },
-  { playerName: 'Rodrigo Vera',  pj: 5, w: 0, pts: 0 },
-];
 
 const st = StyleSheet.create({
   table: { backgroundColor: '#111827', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#1f2937' },
@@ -213,6 +212,18 @@ const s = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 12, color: SUB },
+  nextMatchCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  nextMatchLabel: { color: GOLD, fontSize: 11, fontWeight: '700', marginBottom: 4 },
+  nextMatchTitle: { color: TEXT, fontSize: 16, fontWeight: '800' },
+  nextMatchSub: { color: SUB, fontSize: 12, marginTop: 2 },
   tabsRow: {
     flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER,
   },

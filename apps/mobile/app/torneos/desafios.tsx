@@ -24,9 +24,9 @@ export default function DesafiosScreen() {
   const { data: challenges, isLoading } = useQuery({
     queryKey: ['desafios', firstClubId],
     queryFn: async () => {
-      if (!firstClubId) return { available: [], pending: [], history: [] };
+      if (!firstClubId) return { available: [], pending: [], incoming: [], recent: [], pointsAtStake: 25 };
       const { data } = await api.get(`/clubs/${firstClubId}/challenges`);
-      return data ?? { available: [], pending: [], history: [] };
+      return data ?? { available: [], pending: [], incoming: [], recent: [], pointsAtStake: 25 };
     },
     enabled: !!firstClubId,
   });
@@ -43,7 +43,7 @@ export default function DesafiosScreen() {
 
   const acceptMutation = useMutation({
     mutationFn: async (challengeId: string) => {
-      const { data } = await api.patch(`/clubs/${firstClubId}/challenges/${challengeId}/accept`);
+      const { data } = await api.post(`/clubs/${firstClubId}/challenges/${challengeId}/accept`);
       return data;
     },
     onSuccess: () => {
@@ -55,7 +55,7 @@ export default function DesafiosScreen() {
 
   const rejectMutation = useMutation({
     mutationFn: async (challengeId: string) => {
-      const { data } = await api.patch(`/clubs/${firstClubId}/challenges/${challengeId}/reject`);
+      const { data } = await api.post(`/clubs/${firstClubId}/challenges/${challengeId}/reject`);
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['desafios', firstClubId] }),
@@ -65,8 +65,7 @@ export default function DesafiosScreen() {
   const sendChallengeMutation = useMutation({
     mutationFn: async (targetRosterId: string) => {
       const { data } = await api.post(`/clubs/${firstClubId}/challenges`, {
-        targetRosterId,
-        pointsAtStake: 25,
+        challengedRosterId: targetRosterId,
       });
       return data;
     },
@@ -108,6 +107,13 @@ export default function DesafiosScreen() {
         ) : activeTab === 'MIS DESAFÍOS' ? (
           <MisDesafiosTab
             challenges={challenges}
+            pointsAtStake={challenges?.pointsAtStake ?? 25}
+            onSend={(rosterId, name) => {
+              Alert.alert('Enviar desafío', `¿Enviar desafío a ${name} por ${challenges?.pointsAtStake ?? 25} puntos?`, [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'ENVIAR DESAFÍO', onPress: () => sendChallengeMutation.mutate(rosterId) },
+              ]);
+            }}
             onAccept={(id) => acceptMutation.mutate(id)}
             onReject={(id) => {
               Alert.alert('Rechazar desafío', '¿Confirmas que quieres rechazar?', [
@@ -117,62 +123,53 @@ export default function DesafiosScreen() {
             }}
           />
         ) : activeTab === 'HISTORIAL' ? (
-          <HistorialTab history={challenges?.history ?? []} onViewMatch={(id) => router.push(`/torneos/partido/${id}` as any)} />
+          <HistorialTab history={challenges?.recent ?? []} onViewMatch={(id) => router.push(`/torneos/partido/${id}` as any)} />
         ) : (
-          <RankingTab entries={rankingEntries ?? []} onChallenge={(rosterId) => {
-            Alert.alert('Enviar desafío', '¿Enviar desafío a este jugador con 25 puntos en juego?', [
-              { text: 'Cancelar', style: 'cancel' },
-              { text: 'ENVIAR DESAFÍO', onPress: () => sendChallengeMutation.mutate(rosterId) },
-            ]);
-          }} />
+          <RankingTab entries={rankingEntries ?? []} availableRosterIds={new Set((challenges?.available ?? []).map((entry: any) => entry.rosterId))} />
         )}
       </ScrollView>
     </View>
   );
 }
 
-function MisDesafiosTab({ challenges, onAccept, onReject }: {
+function MisDesafiosTab({ challenges, pointsAtStake, onSend, onAccept, onReject }: {
   challenges: any;
+  pointsAtStake: number;
+  onSend: (rosterId: string, name: string) => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
 }) {
   const available = challenges?.available ?? [];
   const pending = challenges?.pending ?? [];
-  const canChallenge = available.length > 0;
+  const incoming = challenges?.incoming ?? [];
 
   return (
     <View style={{ gap: 14 }}>
-      {/* Available challenge slot */}
-      <View style={dc.availCard}>
-        <View style={dc.availIconWrap}>
-          <Ionicons name="flash" size={20} color={GOLD} />
+      {available.length > 0 && (
+        <View style={{ gap: 10, marginTop: 4 }}>
+          <Text style={dc.sectionLabel}>DESAFÍOS DISPONIBLES</Text>
+          {available.map((c: any) => (
+            <View key={c.rosterId} style={dc.pendingCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={dc.pendingFrom}>{c.name ?? 'Oponente'}</Text>
+                <Text style={dc.pendingSub}>#{c.rank ?? '—'} · {c.division ?? 'Sin división'} · {pointsAtStake} pts</Text>
+              </View>
+              <TouchableOpacity style={dc.acceptBtn} onPress={() => onSend(c.rosterId, c.name)}>
+                <Text style={dc.acceptText}>ENVIAR DESAFÍO</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={dc.availTitle}>Desafío disponible</Text>
-          <Text style={dc.availSub}>Puntos en juego: 25</Text>
-        </View>
-        {canChallenge ? (
-          <View style={dc.greenDot} />
-        ) : (
-          <Text style={dc.usedText}>Usado</Text>
-        )}
-      </View>
-
-      {canChallenge && (
-        <TouchableOpacity style={dc.sendBtn}>
-          <Text style={dc.sendBtnText}>ENVIAR DESAFÍO</Text>
-        </TouchableOpacity>
       )}
 
-      {/* Pending challenges received */}
-      {pending.length > 0 && (
+      {incoming.length > 0 && (
         <View style={{ gap: 10, marginTop: 4 }}>
-          <Text style={dc.sectionLabel}>PENDIENTES RECIBIDOS</Text>
-          {pending.map((c: any) => (
+          <Text style={dc.sectionLabel}>DESAFÍOS PENDIENTES</Text>
+          {incoming.map((c: any) => (
             <View key={c.id} style={dc.pendingCard}>
               <View style={{ flex: 1 }}>
                 <Text style={dc.pendingFrom}>{c.challengerName ?? 'Oponente'}</Text>
-                <Text style={dc.pendingSub}>{c.pointsAtStake ?? 25} pts en juego</Text>
+                <Text style={dc.pendingSub}>{c.pointsAtStake ?? pointsAtStake} pts en juego</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <TouchableOpacity style={dc.acceptBtn} onPress={() => onAccept(c.id)}>
@@ -187,7 +184,24 @@ function MisDesafiosTab({ challenges, onAccept, onReject }: {
         </View>
       )}
 
-      {!canChallenge && pending.length === 0 && (
+      {pending.length > 0 && (
+        <View style={{ gap: 10, marginTop: 4 }}>
+          <Text style={dc.sectionLabel}>ESPERANDO RESPUESTA</Text>
+          {pending.map((c: any) => (
+            <View key={c.id} style={dc.histCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={dc.histOpponent}>{c.challengedName ?? 'Oponente'}</Text>
+                <Text style={dc.histDate}>Expira {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('es-CL') : 'pronto'}</Text>
+              </View>
+              <View style={dc.histBadge}>
+                <Text style={dc.histBadgeText}>PENDIENTE</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {available.length === 0 && incoming.length === 0 && pending.length === 0 && (
         <View style={s.empty}>
           <Ionicons name="flash-outline" size={36} color={SUB} />
           <Text style={s.emptyText}>No tienes desafíos pendientes</Text>
@@ -210,15 +224,19 @@ function HistorialTab({ history, onViewMatch }: { history: any[]; onViewMatch: (
     <View style={{ gap: 10 }}>
       {history.map((c: any, i: number) => {
         const won = c.result === 'WIN';
+        const completed = c.status === 'COMPLETED';
         return (
           <TouchableOpacity key={c.id ?? i} style={dc.histCard} onPress={() => c.matchResultId && onViewMatch(c.matchResultId)}>
             <View style={{ flex: 1 }}>
               <Text style={dc.histOpponent}>{c.opponentName ?? 'Oponente'}</Text>
-              <Text style={dc.histDate}>{c.playedAt ? new Date(c.playedAt).toLocaleDateString('es-CL') : ''}</Text>
+              <Text style={dc.histDate}>
+                {c.playedAt ? new Date(c.playedAt).toLocaleDateString('es-CL') : ''}
+                {completed ? '' : ` · ${c.status ?? ''}`}
+              </Text>
             </View>
-            <View style={[dc.histBadge, { backgroundColor: won ? '#22c55e22' : '#ef444422', borderColor: won ? GREEN : RED }]}>
-              <Text style={[dc.histBadgeText, { color: won ? GREEN : RED }]}>
-                {won ? `+${c.pointsEarned ?? 25}` : `-${c.pointsLost ?? 25}`} pts
+            <View style={[dc.histBadge, completed ? { backgroundColor: won ? '#22c55e22' : '#ef444422', borderColor: won ? GREEN : RED } : null]}>
+              <Text style={[dc.histBadgeText, completed ? { color: won ? GREEN : RED } : { color: SUB }]}>
+                {completed ? (won ? `+${c.pointsDelta ?? 0} pts` : '0 pts') : (c.status ?? '—')}
               </Text>
             </View>
           </TouchableOpacity>
@@ -228,7 +246,7 @@ function HistorialTab({ history, onViewMatch }: { history: any[]; onViewMatch: (
   );
 }
 
-function RankingTab({ entries, onChallenge }: { entries: any[]; onChallenge: (rosterId: string) => void }) {
+function RankingTab({ entries, availableRosterIds }: { entries: any[]; availableRosterIds: Set<string> }) {
   return (
     <View style={{ gap: 10 }}>
       {entries.map((e: any, i: number) => {
@@ -236,17 +254,15 @@ function RankingTab({ entries, onChallenge }: { entries: any[]; onChallenge: (ro
           ?? `${e.rosterEntry?.firstName ?? ''} ${e.rosterEntry?.lastName ?? ''}`.trim()
           ?? 'Jugador';
         const pts = e.totalPoints ?? 0;
+        const challengeable = !!e.rosterEntry?.id && availableRosterIds.has(e.rosterEntry.id);
         return (
           <View key={e.id ?? i} style={dc.rankRow}>
             <Text style={dc.rankNum}>#{e.rank ?? i + 1}</Text>
             <Text style={dc.rankName} numberOfLines={1}>{name}</Text>
             <Text style={dc.rankPts}>{pts.toLocaleString('es-CL')} pts</Text>
-            <TouchableOpacity
-              style={dc.challengeBtn}
-              onPress={() => e.rosterEntry?.id && onChallenge(e.rosterEntry.id)}
-            >
-              <Text style={dc.challengeBtnText}>RETAR</Text>
-            </TouchableOpacity>
+            <View style={[dc.challengeBtn, !challengeable && { opacity: 0.45 }]}>
+              <Text style={dc.challengeBtnText}>{challengeable ? 'RETABLE' : 'NO DISP.'}</Text>
+            </View>
           </View>
         );
       })}

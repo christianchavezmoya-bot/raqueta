@@ -193,6 +193,15 @@ enum MembershipRequestStatus {
   DENIED
 }
 
+enum ChallengeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  COMPLETED
+  CANCELLED
+}
+
 /// Platform-defined announcement categories. A player can mute each one
 /// independently via PlayerNotificationPreference. Direct transactional
 /// notifications (booking confirmations, 2FA codes, payment confirmations,
@@ -391,6 +400,7 @@ model Club {
   parentChildLinks   ParentChildLink[]
   membershipRequests MembershipRequest[]
   favoritedBy        ClubFavorite[]
+  challenges         Challenge[]
 
   @@map("clubs")
 }
@@ -903,6 +913,8 @@ model ClubPlayerRoster {
   matchesAsPlayerOne      Match[]                  @relation("MatchPlayerOne")
   matchesAsPlayerTwo      Match[]                  @relation("MatchPlayerTwo")
   matchesWon              Match[]                  @relation("MatchWinner")
+  challengesSent          Challenge[]              @relation("ChallengerChallenges")
+  challengesReceived      Challenge[]              @relation("ChallengedChallenges")
 
   @@unique([clubId, rut])
   @@index([clubId])
@@ -924,6 +936,7 @@ model RankingSeason {
   rankingEntries ClubRankingEntry[]
   matchResults   ClubMatchResult[]
   bonusAwards    ClubBonusPointAward[]
+  challenges     Challenge[]
 
   @@index([clubId, status])
   @@map("ranking_seasons")
@@ -987,11 +1000,37 @@ model ClubMatchResult {
   winnerRoster  ClubPlayerRoster? @relation("ClubMatchWinnerRoster", fields: [winnerRosterId], references: [id], onDelete: SetNull)
   loserRoster   ClubPlayerRoster? @relation("ClubMatchLoserRoster", fields: [loserRosterId], references: [id], onDelete: SetNull)
   enteredByUser User              @relation(fields: [enteredByUserId], references: [id], onDelete: Restrict)
+  challenge     Challenge?
 
   @@index([clubId, categoryKey])
   @@index([clubId, recordedAt])
   @@index([clubId, seasonId])
   @@map("club_match_results")
+}
+
+model Challenge {
+  id                 String          @id @default(uuid())
+  clubId             String          @map("club_id")
+  seasonId           String          @map("season_id")
+  challengerRosterId String          @map("challenger_roster_id")
+  challengedRosterId String          @map("challenged_roster_id")
+  status             ChallengeStatus @default(PENDING)
+  pointsAtStake      Int             @map("points_at_stake")
+  expiresAt          DateTime        @map("expires_at")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  respondedAt        DateTime?       @map("responded_at")
+  matchResultId      String?         @unique @map("match_result_id")
+
+  club        Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  season      RankingSeason    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  challenger  ClubPlayerRoster @relation("ChallengerChallenges", fields: [challengerRosterId], references: [id], onDelete: Cascade)
+  challenged  ClubPlayerRoster @relation("ChallengedChallenges", fields: [challengedRosterId], references: [id], onDelete: Cascade)
+  matchResult ClubMatchResult? @relation(fields: [matchResultId], references: [id], onDelete: SetNull)
+
+  @@index([clubId, seasonId, status])
+  @@index([challengerRosterId, status])
+  @@index([challengedRosterId, status])
+  @@map("challenges")
 }
 
 // Stage 6F — configurable bonus point types (auto-seeded per club)

@@ -8,8 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ActingUser, assertClubScope } from '../../common/utils/club-scope';
 import { StartSeasonDto } from './dto/start-season.dto';
 
-const PROMOTE_COUNT = 3; // top N move up
-const RELEGATE_COUNT = 3; // bottom N move down
+export const PROMOTE_COUNT = 3; // top N move up
+export const RELEGATE_COUNT = 3; // bottom N move down
 
 @Injectable()
 export class SeasonsService {

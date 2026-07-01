@@ -28,6 +28,7 @@ import { HistoryModule } from './history/history.module';
 import { AdminModule } from './admin/admin.module';
 import { ParentChildModule } from './parent-child/parent-child.module';
 import { FavoritesModule } from './favorites/favorites.module';
+import { ChallengesModule } from './challenges/challenges.module';
 
 @Module({
   providers: [
@@ -64,6 +65,7 @@ import { FavoritesModule } from './favorites/favorites.module';
     AdminModule,
     ParentChildModule,
     FavoritesModule,
+    ChallengesModule,
   ],
 })
 export class AppModule {}

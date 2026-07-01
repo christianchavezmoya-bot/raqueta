@@ -14,6 +14,8 @@ const DEFAULT_RULES = [
   { categoryKey: 'STRAIGHT_SETS',   label: 'Straight sets win',        winnerPoints: 100, loserPoints: -50, active: true },
   { categoryKey: 'TIEBREAK_DECIDER', label: 'Deciding-set tiebreak',   winnerPoints: 100, loserPoints:  70, active: true },
   { categoryKey: 'RETIRO_LESION',   label: 'Retiro por lesión',        winnerPoints: 100, loserPoints:   0, active: true },
+  { categoryKey: 'DESAFIO',         label: 'Desafío',                  winnerPoints:  25, loserPoints:   0, active: true },
+  { categoryKey: 'LIG',             label: 'Liga Promoción',           winnerPoints:  30, loserPoints:   0, active: true },
 ] as const;
 
 type ParsedImportRow = {
@@ -99,6 +101,12 @@ export class ClubRankingsService {
 
   async createMatchResult(clubId: string, dto: CreateClubMatchResultDto, actor: ActingUser) {
     await this.assertScopedClub(clubId, actor);
+    return this.createMatchResultAuthorized(clubId, dto, actor.id);
+  }
+
+  async createMatchResultAuthorized(clubId: string, dto: CreateClubMatchResultDto, enteredByUserId: string) {
+    await this.ensureClubExists(clubId);
+    await this.ensureRulesSeeded(clubId);
     await this.ensureCategoryExists(clubId, dto.categoryKey);
 
     const winnerRosterId = dto.winnerRosterId?.trim() || null;
@@ -126,7 +134,7 @@ export class ClubRankingsService {
         setScores:     dto.setScores as unknown as Prisma.InputJsonValue | undefined,
         recordedAt:    new Date(dto.recordedAt),
         source:        ClubMatchResultSource.MANUAL,
-        enteredByUserId: actor.id,
+        enteredByUserId,
       },
     });
 
@@ -925,11 +933,15 @@ export class ClubRankingsService {
 
   private async ensureRulesSeeded(clubId: string) {
     await this.ensureClubExists(clubId);
-    const count = await this.prisma.clubRankingRule.count({ where: { clubId } });
-    if (count > 0) return;
-    await this.prisma.clubRankingRule.createMany({
-      data: DEFAULT_RULES.map(r => ({ ...r, clubId })),
-    });
+    await this.prisma.$transaction(
+      DEFAULT_RULES.map(rule =>
+        this.prisma.clubRankingRule.upsert({
+          where: { clubId_categoryKey: { clubId, categoryKey: rule.categoryKey } },
+          create: { ...rule, clubId },
+          update: {},
+        }),
+      ),
+    );
   }
 
   private async ensureCategoryExists(clubId: string, categoryKey: string) {

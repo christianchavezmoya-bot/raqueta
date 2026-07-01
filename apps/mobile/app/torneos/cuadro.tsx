@@ -64,25 +64,33 @@ const con = StyleSheet.create({
 /* ── Match card ─────────────────────────────────────────────────────────────── */
 type MatchShape = {
   id?: string;
-  player1Name?: string; player1?: string; player1Id?: string;
-  player2Name?: string; player2?: string; player2Id?: string;
-  score1?: string; scorePlayer1?: string;
-  score2?: string; scorePlayer2?: string;
-  winnerId?: string;
+  playerOne?: { name?: string; rosterId?: string | null; memberRosterIds?: string[] };
+  playerTwo?: { name?: string; rosterId?: string | null; memberRosterIds?: string[] };
+  setScores?: Array<{ winner: number; loser: number }> | null;
+  winnerSide?: 'ONE' | 'TWO' | null;
 };
 
-function MatchCard({ match, onPress, placeholder }: { match?: MatchShape; onPress?: () => void; placeholder?: [string, string] }) {
-  const p1   = match?.player1Name ?? match?.player1 ?? placeholder?.[0] ?? 'TBD';
-  const p2   = match?.player2Name ?? match?.player2 ?? placeholder?.[1] ?? 'TBD';
-  const s1   = match?.score1 ?? match?.scorePlayer1;
-  const s2   = match?.score2 ?? match?.scorePlayer2;
-  const p1Won = !!match?.winnerId && match.winnerId === match.player1Id;
-  const p2Won = !!match?.winnerId && match.winnerId === match.player2Id;
+function MatchCard({
+  match,
+  onPress,
+  currentRosterId,
+}: {
+  match?: MatchShape;
+  onPress?: () => void;
+  currentRosterId?: string | null;
+}) {
+  const p1 = match?.playerOne?.name ?? 'TBD';
+  const p2 = match?.playerTwo?.name ?? 'TBD';
+  const scores = buildScoreLines(match);
+  const p1Won = match?.winnerSide === 'ONE';
+  const p2Won = match?.winnerSide === 'TWO';
+  const p1Self = !!currentRosterId && !!match?.playerOne?.memberRosterIds?.includes(currentRosterId);
+  const p2Self = !!currentRosterId && !!match?.playerTwo?.memberRosterIds?.includes(currentRosterId);
 
   const inner = (
     <View style={mc.card}>
-      <PlayerRow name={p1} score={s1} won={p1Won} />
-      <PlayerRow name={p2} score={s2} won={p2Won} />
+      <PlayerRow name={p1} score={scores.score1} won={p1Won} self={p1Self} />
+      <PlayerRow name={p2} score={scores.score2} won={p2Won} self={p2Self} />
     </View>
   );
 
@@ -94,10 +102,10 @@ function MatchCard({ match, onPress, placeholder }: { match?: MatchShape; onPres
   );
 }
 
-function PlayerRow({ name, score, won }: { name: string; score?: string; won?: boolean }) {
+function PlayerRow({ name, score, won, self }: { name: string; score?: string; won?: boolean; self?: boolean }) {
   return (
     <View style={mc.row}>
-      <Text style={[mc.name, won && mc.nameWon]} numberOfLines={1}>{name}</Text>
+      <Text style={[mc.name, won && mc.nameWon, self && mc.nameSelf]} numberOfLines={1}>{name}</Text>
       {score != null && <Text style={[mc.score, won && mc.scoreWon]}>{score}</Text>}
     </View>
   );
@@ -115,40 +123,31 @@ const mc = StyleSheet.create({
   },
   name:      { fontSize: 12, fontWeight: '600', color: SUB, flex: 1 },
   nameWon:   { color: TEXT },
+  nameSelf:  { color: GOLD },
   score:     { fontSize: 13, fontWeight: '800', color: SUB, marginLeft: 6 },
   scoreWon:  { color: GREEN },
 });
 
 /* ── Bracket tree ────────────────────────────────────────────────────────────── */
-function BracketTree({ matches, onMatchPress }: {
+type BracketRound = {
+  round: string;
+  label: string;
+  bracketStage: string;
   matches: MatchShape[];
+};
+
+function BracketTree({ rounds, onMatchPress, currentRosterId }: {
+  rounds: BracketRound[];
   onMatchPress: (id: string) => void;
+  currentRosterId?: string | null;
 }) {
-  // Normalise round labels to uppercase
-  const byRound = (round: string) =>
-    matches.filter(m => (m as any).round?.toUpperCase() === round.toUpperCase());
-
-  const cuartos = byRound('CUARTOS');
-  const semis   = byRound('SEMIS');
-  const final   = byRound('FINAL');
-
-  // Placeholder arrays when API has no matches yet
-  const q: Array<MatchShape | undefined> = cuartos.length
-    ? cuartos.slice(0, 4)
-    : [undefined, undefined, undefined, undefined];
-  const s: Array<MatchShape | undefined> = semis.length
-    ? semis.slice(0, 2)
-    : [undefined, undefined];
-  const f: MatchShape | undefined = final[0];
-
-  // Placeholder names used when no real data
-  const qNames: Array<[string, string]> = [
-    ['Raúl Méndez', 'Matías G.'], ['Rafael Labbé', 'Pedro Z.'],
-    ['David C.', 'Juan P.'],      ['Jaime Lorca', 'Rodrigo V.'],
-  ];
-  const sNames: Array<[string, string]> = [
-    ['Ganador M1', 'Ganador M2'], ['Ganador M3', 'Ganador M4'],
-  ];
+  const mainRounds = rounds.filter(r => r.bracketStage === 'MAIN');
+  const roundMap = new Map(
+    mainRounds.map(round => [mapRound(round.round), round.matches]),
+  );
+  const q = Array.from({ length: 4 }, (_, index) => roundMap.get('CUARTOS')?.[index]);
+  const s = Array.from({ length: 2 }, (_, index) => roundMap.get('SEMIS')?.[index]);
+  const f = roundMap.get('FINAL')?.[0];
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={bt.scroll}>
@@ -158,15 +157,15 @@ function BracketTree({ matches, onMatchPress }: {
         <Text style={bt.roundLabel}>CUARTOS</Text>
         {/* Pair A */}
         <View style={{ gap: INNER }}>
-          <MatchCard match={q[0]} placeholder={qNames[0]} onPress={q[0]?.id ? () => onMatchPress(q[0]!.id!) : undefined} />
-          <MatchCard match={q[1]} placeholder={qNames[1]} onPress={q[1]?.id ? () => onMatchPress(q[1]!.id!) : undefined} />
+          <MatchCard match={q[0]} currentRosterId={currentRosterId} onPress={q[0]?.id ? () => onMatchPress(q[0]!.id!) : undefined} />
+          <MatchCard match={q[1]} currentRosterId={currentRosterId} onPress={q[1]?.id ? () => onMatchPress(q[1]!.id!) : undefined} />
         </View>
         {/* Gap between pairs */}
         <View style={{ height: OUTER }} />
         {/* Pair B */}
         <View style={{ gap: INNER }}>
-          <MatchCard match={q[2]} placeholder={qNames[2]} onPress={q[2]?.id ? () => onMatchPress(q[2]!.id!) : undefined} />
-          <MatchCard match={q[3]} placeholder={qNames[3]} onPress={q[3]?.id ? () => onMatchPress(q[3]!.id!) : undefined} />
+          <MatchCard match={q[2]} currentRosterId={currentRosterId} onPress={q[2]?.id ? () => onMatchPress(q[2]!.id!) : undefined} />
+          <MatchCard match={q[3]} currentRosterId={currentRosterId} onPress={q[3]?.id ? () => onMatchPress(q[3]!.id!) : undefined} />
         </View>
       </View>
 
@@ -185,12 +184,12 @@ function BracketTree({ matches, onMatchPress }: {
         <Text style={bt.roundLabel}>SEMIS</Text>
         {/* Semi 0 centered on Pair A */}
         <View style={{ paddingTop: SEMI_PAD_TOP }}>
-          <MatchCard match={s[0]} placeholder={sNames[0]} onPress={s[0]?.id ? () => onMatchPress(s[0]!.id!) : undefined} />
+          <MatchCard match={s[0]} currentRosterId={currentRosterId} onPress={s[0]?.id ? () => onMatchPress(s[0]!.id!) : undefined} />
         </View>
         {/* Gap to Semi 1 */}
         <View style={{ height: SEMI_GAP }} />
         {/* Semi 1 */}
-        <MatchCard match={s[1]} placeholder={sNames[1]} onPress={s[1]?.id ? () => onMatchPress(s[1]!.id!) : undefined} />
+        <MatchCard match={s[1]} currentRosterId={currentRosterId} onPress={s[1]?.id ? () => onMatchPress(s[1]!.id!) : undefined} />
       </View>
 
       {/* ── Connector SEMIS → FINAL ── */}
@@ -202,7 +201,7 @@ function BracketTree({ matches, onMatchPress }: {
       <View style={bt.col}>
         <Text style={bt.roundLabel}>FINAL</Text>
         <View style={{ paddingTop: FINAL_PAD_TOP }}>
-          <MatchCard match={f} placeholder={['Ganador Semi 1', 'Ganador Semi 2']} onPress={f?.id ? () => onMatchPress(f.id!) : undefined} />
+          <MatchCard match={f} currentRosterId={currentRosterId} onPress={f?.id ? () => onMatchPress(f.id!) : undefined} />
         </View>
         <View style={{ alignItems: 'center', paddingTop: 12 }}>
           <Ionicons name="trophy" size={18} color={GOLD} />
@@ -229,6 +228,7 @@ export default function CuadroTorneoScreen() {
   const home    = useHomeState();
   const { user } = useAuthStore();
   const firstClubId = home.activeMemberships?.[0]?.club?.id;
+  const currentRosterId = home.activeMemberships?.[0]?.roster?.id ?? null;
 
   // tournamentId may be passed from /torneos/torneo/[id] so the bracket always
   // shows the tournament the user just navigated from, not whichever is globally
@@ -283,7 +283,9 @@ export default function CuadroTorneoScreen() {
     onError: (err: any) => Alert.alert('Error', err.response?.data?.message ?? 'No se pudo registrar'),
   });
 
-  const allMatches: MatchShape[] = bracket?.matches ?? [];
+  const registrationOnly = !!bracket?.registrationOnly;
+  const rounds: BracketRound[] = bracket?.rounds ?? [];
+  const participants: Array<{ rosterId?: string | null; name: string }> = bracket?.participants ?? [];
 
   return (
     <View style={s.container}>
@@ -301,10 +303,13 @@ export default function CuadroTorneoScreen() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {isLoading ? (
           <ActivityIndicator color={GOLD} style={{ marginTop: 40 }} />
+        ) : registrationOnly ? (
+          <DrawPendingState participants={participants} />
         ) : (
           <BracketTree
-            matches={allMatches}
+            rounds={rounds}
             onMatchPress={id => router.push(`/torneos/partido/${id}` as any)}
+            currentRosterId={currentRosterId}
           />
         )}
 
@@ -348,4 +353,62 @@ const s = StyleSheet.create({
     alignItems: 'center', marginHorizontal: 16, marginTop: 8,
   },
   simulateBtnText: { fontSize: 13, fontWeight: '800', color: '#0a0f1a', letterSpacing: 0.5 },
+});
+
+function buildScoreLines(match?: MatchShape) {
+  if (!match?.setScores?.length || !match.winnerSide) return { score1: undefined, score2: undefined };
+  const score1 = match.setScores
+    .map(set => match.winnerSide === 'ONE' ? set.winner : set.loser)
+    .join(' ');
+  const score2 = match.setScores
+    .map(set => match.winnerSide === 'TWO' ? set.winner : set.loser)
+    .join(' ');
+  return { score1, score2 };
+}
+
+function mapRound(round?: string) {
+  switch ((round ?? '').toUpperCase()) {
+    case 'R1': return 'CUARTOS';
+    case 'QF': return 'CUARTOS';
+    case 'SF': return 'SEMIS';
+    case 'F':
+    case 'FINAL': return 'FINAL';
+    default: return (round ?? '').toUpperCase();
+  }
+}
+
+function DrawPendingState({ participants }: { participants: Array<{ name: string }> }) {
+  return (
+    <View style={pending.wrap}>
+      <Ionicons name="git-branch-outline" size={38} color={GOLD} />
+      <Text style={pending.title}>Cuadro por definir</Text>
+      <Text style={pending.sub}>El fixture todavía no ha sido generado. Estos son los participantes inscritos:</Text>
+      <View style={pending.list}>
+        {participants.map((participant, index) => (
+          <View key={`${participant.name}-${index}`} style={pending.row}>
+            <Text style={pending.index}>{index + 1}.</Text>
+            <Text style={pending.name}>{participant.name}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const pending = StyleSheet.create({
+  wrap: {
+    margin: 16,
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 10,
+  },
+  title: { fontSize: 18, fontWeight: '800', color: TEXT },
+  sub: { fontSize: 13, color: SUB, lineHeight: 18 },
+  list: { gap: 8, marginTop: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  index: { color: GOLD, fontWeight: '800' },
+  name: { color: TEXT, fontSize: 14, fontWeight: '600', flex: 1 },
 });
