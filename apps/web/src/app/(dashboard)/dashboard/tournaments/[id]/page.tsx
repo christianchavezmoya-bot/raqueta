@@ -1,38 +1,80 @@
 'use client';
 
-import { useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ArrowLeft, Trophy, Users, Calendar, ChevronDown, Play, CheckCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  BarChart3,
+  Bell,
+  Calendar,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Play,
+  Swords,
+  Trophy,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { useClubStore } from '@/stores/club.store';
+import { useAuthStore } from '@/stores/auth.store';
+
+import ResumenTab from '@/components/tournaments/tabs/ResumenTab';
+import InscripcionesTab from '@/components/tournaments/tabs/InscripcionesTab';
+import CuadroTab from '@/components/tournaments/tabs/CuadroTab';
+import PartidosTab from '@/components/tournaments/tabs/PartidosTab';
+import RankingTab from '@/components/tournaments/tabs/RankingTab';
+import LigaTab from '@/components/tournaments/tabs/LigaTab';
+import DesafiosTab from '@/components/tournaments/tabs/DesafiosTab';
+import ComunicarTab from '@/components/tournaments/tabs/ComunicarTab';
+
+type TabKey = 'resumen' | 'inscripciones' | 'cuadro' | 'partidos' | 'ranking' | 'liga' | 'desafios' | 'comunicar';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   DRAFT: { label: 'Borrador', color: 'badge-gray' },
-  REGISTRATION_OPEN: { label: 'Inscripcin abierta', color: 'badge-green' },
-  REGISTRATION_CLOSED: { label: 'Inscripcin cerrada', color: 'badge-yellow' },
+  REGISTRATION_OPEN: { label: 'Inscripción abierta', color: 'badge-green' },
+  REGISTRATION_CLOSED: { label: 'Inscripción cerrada', color: 'badge-yellow' },
   IN_PROGRESS: { label: 'En curso', color: 'badge-yellow' },
   COMPLETED: { label: 'Finalizado', color: 'badge-gray' },
   CANCELLED: { label: 'Cancelado', color: 'badge-red' },
 };
 
-const MATCH_STATUS_LABELS: Record<string, string> = {
-  SCHEDULED: 'Programado',
-  IN_PROGRESS: 'En curso',
-  COMPLETED: 'Completado',
-  CANCELLED: 'Cancelado',
-  WALKOVER: 'Walkover',
-};
-
 export default function TournamentDetailPage() {
+  return (
+    <Suspense fallback={<div className="card h-48 animate-pulse bg-gray-100" />}>
+      <TournamentDetailInner />
+    </Suspense>
+  );
+}
+
+function TournamentDetailInner() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'overview' | 'registrations' | 'matches'>('overview');
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [matchResult, setMatchResult] = useState<{ matchId: string; winnerId: string; score: string } | null>(null);
+  const selectedClub = useClubStore(s => s.selectedClub);
+  const user = useAuthStore(s => s.user);
+
+  // ── Deep linking via ?tab= ─────────────────────────────────────────────
+  const validTabs: TabKey[] = ['resumen', 'inscripciones', 'cuadro', 'partidos', 'ranking', 'liga', 'desafios', 'comunicar'];
+  const rawTab = searchParams.get('tab');
+  const initialTab: TabKey = (validTabs.includes(rawTab as TabKey) ? rawTab : 'resumen') as TabKey;
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+  const [showAdvancedTabs, setShowAdvancedTabs] = useState(true);
+
+  // Keep the URL in sync when the tab changes via the nav.
+  useEffect(() => {
+    if (rawTab !== activeTab) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', activeTab);
+      router.replace(`/dashboard/tournaments/${id}?${params.toString()}`, { scroll: false });
+    }
+  }, [activeTab, id, rawTab, router, searchParams]);
 
   const { data: tournament, isLoading } = useQuery({
     queryKey: ['tournament', id],
@@ -52,30 +94,7 @@ export default function TournamentDetailPage() {
     onError: () => toast.error('Error al actualizar estado'),
   });
 
-  const generateFixtureMutation = useMutation({
-    mutationFn: () => api.post(`/tournaments/${id}/generate-fixture`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
-      toast.success('Fixture generado exitosamente');
-    },
-    onError: () => toast.error('Error al generar fixture'),
-  });
-
-  const recordResultMutation = useMutation({
-    mutationFn: (data: { matchId: string; winnerId: string; score: string }) => {
-      const [playerOneScore = '', playerTwoScore = ''] = data.score.trim().split(/\s+/, 2);
-      return api.post(`/matches/${data.matchId}/result`, { winnerId: data.winnerId, playerOneScore, playerTwoScore });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
-      setMatchResult(null);
-      toast.success('Resultado registrado');
-    },
-    onError: () => toast.error('Error al registrar resultado'),
-  });
-
-  const formatCLP = (n: number) =>
-    new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(n);
+  const canManage = ['SUPER_ADMIN', 'CLUB_ADMIN', 'MANAGER', 'RECEPTION'].includes(user?.role ?? '');
 
   if (isLoading) {
     return (
@@ -101,6 +120,36 @@ export default function TournamentDetailPage() {
     (sum: number, cat: any) => sum + (cat.registrations?.length ?? 0), 0,
   ) ?? 0;
 
+  const allRegistrations = (tournament.categories ?? []).flatMap((cat: any) => cat.registrations ?? []);
+
+  // Liga tab is only visible when the tournament format is round-robin.
+  const showLiga = tournament.format === 'ROUND_ROBIN';
+  const visibleTabs: TabKey[] = ['resumen', 'inscripciones', 'cuadro', 'partidos', 'ranking'];
+  if (showLiga) visibleTabs.push('liga');
+  visibleTabs.push('desafios', 'comunicar');
+
+  const tabLabels: Record<TabKey, string> = {
+    resumen: 'Resumen',
+    inscripciones: 'Inscripciones',
+    cuadro: 'Cuadro',
+    partidos: 'Partidos',
+    ranking: 'Ranking',
+    liga: 'Liga',
+    desafios: 'Desafíos',
+    comunicar: 'Comunicar',
+  };
+
+  const tabIcons: Record<TabKey, any> = {
+    resumen: Layers,
+    inscripciones: Users,
+    cuadro: Trophy,
+    partidos: Calendar,
+    ranking: BarChart3,
+    liga: Trophy,
+    desafios: Swords,
+    comunicar: Bell,
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -109,280 +158,103 @@ export default function TournamentDetailPage() {
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900">{tournament.name}</h1>
             <span className={statusCfg.color}>{statusCfg.label}</span>
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
             {format(new Date(tournament.startDate), 'd MMM', { locale: es })} {' '}
-            {format(new Date(tournament.endDate), 'd MMM yyyy', { locale: es })}
+            – {format(new Date(tournament.endDate), 'd MMM yyyy', { locale: es })}
           </p>
         </div>
 
         {/* Status actions */}
-        <div className="flex gap-2">
-          {tournament.status === 'DRAFT' && (
-            <button className="btn-primary flex items-center gap-2" onClick={() => updateStatusMutation.mutate('REGISTRATION_OPEN')}>
-              Abrir inscripciones
-            </button>
-          )}
-          {tournament.status === 'REGISTRATION_OPEN' && (
-            <>
-              <button className="btn-secondary" onClick={() => updateStatusMutation.mutate('REGISTRATION_CLOSED')}>
+        {canManage && (
+          <div className="flex gap-2">
+            {tournament.status === 'DRAFT' && (
+              <button className="btn-primary" onClick={() => updateStatusMutation.mutate('REGISTRATION_OPEN')}>
+                Abrir inscripciones
+              </button>
+            )}
+            {tournament.status === 'REGISTRATION_OPEN' && (
+              <button
+                className="btn-secondary"
+                onClick={() => updateStatusMutation.mutate('REGISTRATION_CLOSED')}
+              >
                 Cerrar inscripciones
               </button>
+            )}
+            {tournament.status === 'IN_PROGRESS' && (
               <button
                 className="btn-primary flex items-center gap-2"
-                onClick={() => generateFixtureMutation.mutate()}
-                disabled={generateFixtureMutation.isPending}
+                onClick={() => updateStatusMutation.mutate('COMPLETED')}
               >
-                <Play className="w-4 h-4" />
-                {generateFixtureMutation.isPending ? 'Generando...' : 'Generar fixture'}
+                <CheckCircle className="w-4 h-4" /> Finalizar torneo
               </button>
-            </>
-          )}
-          {tournament.status === 'IN_PROGRESS' && (
-            <button className="btn-primary flex items-center gap-2" onClick={() => updateStatusMutation.mutate('COMPLETED')}>
-              <CheckCircle className="w-4 h-4" /> Finalizar torneo
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Inscriptos', value: totalRegistrations, icon: Users },
-          { label: 'Categoras', value: tournament.categories?.length ?? 0, icon: Trophy },
-          { label: 'Precio', value: tournament.price > 0 ? formatCLP(tournament.price) : 'Gratis', icon: Calendar },
-          { label: 'Mx. jugadores', value: tournament.maxPlayers ?? '8', icon: Users },
-        ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="card text-center py-5">
-            <Icon className="w-5 h-5 text-brand-600 mx-auto mb-1.5" />
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+            )}
           </div>
-        ))}
+        )}
       </div>
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="flex gap-6">
-          {(['overview', 'registrations', 'matches'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-brand-600 text-brand-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab === 'overview' ? 'Resumen' : tab === 'registrations' ? 'Inscripciones' : 'Partidos'}
-            </button>
-          ))}
+        <nav className="flex flex-wrap gap-x-1">
+          {visibleTabs.map(tab => {
+            const Icon = tabIcons[tab];
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`pb-3 px-3 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+                  activeTab === tab
+                    ? 'border-brand-600 text-brand-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tabLabels[tab]}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
-      {/* Overview */}
-      {activeTab === 'overview' && (
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="font-semibold text-gray-900 mb-3">Informacin general</h3>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-gray-500">Formato</dt><dd className="font-medium">{tournament.format}</dd></div>
-              {tournament.description && (
-                <div><dt className="text-gray-500 mb-1">Descripcin</dt><dd className="text-gray-700">{tournament.description}</dd></div>
-              )}
-              {tournament.registrationOpenDate && (
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Apertura inscripcin</dt>
-                  <dd className="font-medium">{format(new Date(tournament.registrationOpenDate), 'd MMM yyyy', { locale: es })}</dd>
-                </div>
-              )}
-              {tournament.registrationCloseDate && (
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Cierre inscripcin</dt>
-                  <dd className="font-medium">{format(new Date(tournament.registrationCloseDate), 'd MMM yyyy', { locale: es })}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-
-          <div className="card">
-            <h3 className="font-semibold text-gray-900 mb-3">Categoras</h3>
-            <div className="space-y-2">
-              {tournament.categories?.map((cat: any) => (
-                <div key={cat.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                  <div>
-                    <p className="font-medium text-sm text-gray-900">{cat.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {cat.gender === 'MALE' ? 'Masculino' : cat.gender === 'FEMALE' ? 'Femenino' : 'Mixto'}
-                      {cat.ageMin || cat.ageMax ? `  ${cat.ageMin ?? ''}${cat.ageMax ?? ''}` : ''}
-                    </p>
-                  </div>
-                  <span className="badge-gray text-xs">{cat.registrations?.length ?? 0} inscriptos</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Active tab */}
+      {activeTab === 'resumen' && (
+        <ResumenTab
+          tournament={tournament}
+          allRegistrations={allRegistrations}
+          matches={tournament.matches ?? []}
+        />
       )}
-
-      {/* Registrations */}
-      {activeTab === 'registrations' && (
-        <div className="space-y-4">
-          {tournament.categories?.map((cat: any) => (
-            <div key={cat.id} className="card p-0 overflow-hidden">
-              <button
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50"
-                onClick={() => setExpandedCategory(expandedCategory === cat.id ? null : cat.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <Trophy className="w-4 h-4 text-yellow-500" />
-                  <span className="font-semibold text-gray-900">{cat.name}</span>
-                  <span className="badge-gray text-xs">{cat.registrations?.length ?? 0} jugadores</span>
-                </div>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expandedCategory === cat.id ? 'rotate-180' : ''}`} />
-              </button>
-
-              {expandedCategory === cat.id && (
-                <div className="border-t border-gray-100">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Jugador</th>
-                        <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Fecha inscripcin</th>
-                        <th className="text-left px-5 py-2 text-xs font-semibold text-gray-500 uppercase">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {cat.registrations?.map((reg: any) => (
-                        <tr key={reg.id}>
-                          <td className="px-5 py-2.5">
-                            <p className="font-medium text-gray-900">
-                              {reg.player?.playerProfile?.displayName ?? reg.player?.email}
-                            </p>
-                            <p className="text-xs text-gray-500">{reg.player?.email}</p>
-                          </td>
-                          <td className="px-5 py-2.5 text-gray-600">
-                            {format(new Date(reg.registeredAt), 'd MMM yyyy', { locale: es })}
-                          </td>
-                          <td className="px-5 py-2.5">
-                            <span className={reg.paymentStatus === 'PAID' ? 'badge-green' : 'badge-yellow'}>
-                              {reg.paymentStatus === 'PAID' ? 'Pagado' : 'Pendiente'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                      {(!cat.registrations || cat.registrations.length === 0) && (
-                        <tr>
-                          <td colSpan={3} className="px-5 py-6 text-center text-gray-400 text-sm">
-                            Sin inscripciones an
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      {activeTab === 'inscripciones' && (
+        <InscripcionesTab categories={tournament.categories ?? []} />
       )}
-
-      {/* Matches */}
-      {activeTab === 'matches' && (
-        <div className="space-y-3">
-          {tournament.matches?.length === 0 || !tournament.matches ? (
-            <div className="text-center py-16 text-gray-400">
-              <Play className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No hay partidos generados. Genera el fixture primero.</p>
-            </div>
-          ) : (
-            tournament.matches.map((match: any) => (
-              <div key={match.id} className="card">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="text-center min-w-[100px]">
-                      <p className="font-semibold text-gray-900">
-                        {match.playerOne?.playerProfile?.displayName ?? match.playerOne?.email ?? 'TBD'}
-                      </p>
-                      <p className="text-xs text-gray-500">Jugador 1</p>
-                    </div>
-                    <span className="text-gray-400 font-bold">vs</span>
-                    <div className="text-center min-w-[100px]">
-                      <p className="font-semibold text-gray-900">
-                        {match.playerTwo?.playerProfile?.displayName ?? match.playerTwo?.email ?? 'TBD'}
-                      </p>
-                      <p className="text-xs text-gray-500">Jugador 2</p>
-                    </div>
-                    {(match.playerOneScore || match.playerTwoScore) && (
-                      <span className="text-sm font-mono font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                        {[match.playerOneScore, match.playerTwoScore].filter(Boolean).join(' ')}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    {match.scheduledTime && (
-                      <span className="text-xs text-gray-500">
-                        {format(new Date(match.scheduledTime), 'd MMM HH:mm', { locale: es })}
-                      </span>
-                    )}
-                    <span className={
-                      match.status === 'COMPLETED' ? 'badge-green' :
-                      match.status === 'IN_PROGRESS' ? 'badge-yellow' :
-                      'badge-gray'
-                    }>
-                      {MATCH_STATUS_LABELS[match.status] ?? match.status}
-                    </span>
-                    {match.status === 'SCHEDULED' && match.playerOne && match.playerTwo && (
-                      <button
-                        className="btn-primary text-xs py-1 px-3"
-                        onClick={() => setMatchResult({ matchId: match.id, winnerId: '', score: '' })}
-                      >
-                        Registrar resultado
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {matchResult?.matchId === match.id && (
-                  <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-3">
-                    <select
-                      className="input-field flex-1"
-                      value={matchResult.winnerId}
-                      onChange={e => setMatchResult(r => r ? { ...r, winnerId: e.target.value } : r)}
-                    >
-                      <option value="">Seleccionar ganador</option>
-                      <option value={match.playerOneId}>
-                        {match.playerOne?.playerProfile?.displayName ?? match.playerOne?.email}
-                      </option>
-                      <option value={match.playerTwoId}>
-                        {match.playerTwo?.playerProfile?.displayName ?? match.playerTwo?.email}
-                      </option>
-                    </select>
-                    <input
-                      className="input-field flex-1"
-                      placeholder="Marcador (ej: 6-4 7-5)"
-                      value={matchResult.score}
-                      onChange={e => setMatchResult(r => r ? { ...r, score: e.target.value } : r)}
-                    />
-                    <button
-                      className="btn-primary whitespace-nowrap"
-                      onClick={() => recordResultMutation.mutate(matchResult!)}
-                      disabled={!matchResult.winnerId || recordResultMutation.isPending}
-                    >
-                      Guardar
-                    </button>
-                    <button className="btn-secondary" onClick={() => setMatchResult(null)}>Cancelar</button>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+      {activeTab === 'cuadro' && (
+        <CuadroTab
+          tournamentId={id}
+          tournamentFormat={tournament.format}
+          tournamentStatus={tournament.status}
+          canManage={canManage}
+        />
+      )}
+      {activeTab === 'partidos' && (
+        <PartidosTab
+          tournamentId={id}
+          matches={tournament.matches ?? []}
+          canManage={canManage}
+        />
+      )}
+      {activeTab === 'ranking' && <RankingTab clubId={selectedClub?.id} />}
+      {activeTab === 'liga' && <LigaTab clubId={selectedClub?.id} />}
+      {activeTab === 'desafios' && <DesafiosTab clubId={selectedClub?.id} />}
+      {activeTab === 'comunicar' && (
+        <ComunicarTab
+          tournamentId={id}
+          tournamentName={tournament.name}
+          tournamentStatus={tournament.status}
+          registrations={allRegistrations}
+        />
       )}
     </div>
   );

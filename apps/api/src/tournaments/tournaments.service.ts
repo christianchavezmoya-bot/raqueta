@@ -39,14 +39,14 @@ export class TournamentsService {
                 roster: {
                   include: { linkedPlayerProfile: { select: { id: true, displayName: true, user: { select: { id: true, email: true } } } } },
                 },
-                team: { include: { player1Roster: true, player2Roster: true } },
+                team: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
               },
               orderBy: { registeredAt: 'asc' },
             },
-            teams: { include: { player1Roster: true, player2Roster: true } },
+            teams: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
           },
         },
-        teams: { include: { player1Roster: true, player2Roster: true } },
+        teams: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
         registrations: {
           include: {
             roster: {
@@ -63,9 +63,9 @@ export class TournamentsService {
             playerOneRoster: { include: { linkedPlayerProfile: true } },
             playerTwoRoster: { include: { linkedPlayerProfile: true } },
             winnerRoster: { include: { linkedPlayerProfile: true } },
-            teamOne: { include: { player1Roster: true, player2Roster: true } },
-            teamTwo: { include: { player1Roster: true, player2Roster: true } },
-            teamWinner: { include: { player1Roster: true, player2Roster: true } },
+            teamOne: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
+            teamTwo: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
+            teamWinner: { include: { player1Roster: this.rosterLiteInclude(), player2Roster: this.rosterLiteInclude() } },
             category: true,
           },
           orderBy: [{ bracketStage: 'asc' }, { round: 'asc' }, { scheduledTime: 'asc' }],
@@ -73,7 +73,90 @@ export class TournamentsService {
       },
     });
     if (!t) throw new NotFoundException('Tournament not found');
+
+    // Stamp `memberships` (active memberships at this club only) onto every
+    // roster entry referenced anywhere in the tournament tree so the web UI
+    // can compute the SOCIO / CASUAL / EXTERNO / SIN VINCULAR classification
+    // client-side without an extra round-trip.
+    await this.stampClubMemberships(t);
+
     return t;
+  }
+
+  /**
+   * Minimal roster include used inside team embeds.
+   */
+  private rosterLiteInclude() {
+    return {
+      include: {
+        linkedPlayerProfile: { select: { id: true, displayName: true, user: { select: { id: true, email: true } } } },
+      },
+    } as const;
+  }
+
+  /**
+   * Walk a tournament-shaped result (from `findOne`) and stamp each unique
+   * roster object with an `memberships` array containing only this club's
+   * ACTIVE memberships for that roster. Idempotent; safe to call on any
+   * object that follows the include shape.
+   */
+  private async stampClubMemberships(t: any) {
+    if (!t) return;
+    const clubId = t.clubId as string;
+    const rosterIds = new Set<string>();
+    const visit = (roster: any) => {
+      if (roster?.id) rosterIds.add(roster.id);
+    };
+    (t.registrations ?? []).forEach((r: any) => visit(r.roster));
+    (t.matches ?? []).forEach((m: any) => {
+      visit(m.playerOneRoster);
+      visit(m.playerTwoRoster);
+      visit(m.winnerRoster);
+      visit(m.teamOne?.player1Roster);
+      visit(m.teamOne?.player2Roster);
+      visit(m.teamTwo?.player1Roster);
+      visit(m.teamTwo?.player2Roster);
+    });
+    (t.categories ?? []).forEach((cat: any) =>
+      (cat.registrations ?? []).forEach((reg: any) => {
+        visit(reg.roster);
+        visit(reg.team?.player1Roster);
+        visit(reg.team?.player2Roster);
+      }),
+    );
+
+    if (!rosterIds.size) return;
+    const memberships = await this.prisma.membership.findMany({
+      where: { clubId, status: 'ACTIVE', rosterId: { in: Array.from(rosterIds) } },
+      select: { id: true, rosterId: true, status: true },
+    });
+    const byRoster = new Map<string, Array<{ id: string; status: string }>>();
+    for (const m of memberships) {
+      const arr = byRoster.get(m.rosterId) ?? [];
+      arr.push({ id: m.id, status: m.status });
+      byRoster.set(m.rosterId, arr);
+    }
+    const stamp = (roster: any) => {
+      if (!roster?.id) return;
+      roster.memberships = byRoster.get(roster.id) ?? [];
+    };
+    (t.registrations ?? []).forEach((r: any) => stamp(r.roster));
+    (t.matches ?? []).forEach((m: any) => {
+      stamp(m.playerOneRoster);
+      stamp(m.playerTwoRoster);
+      stamp(m.winnerRoster);
+      stamp(m.teamOne?.player1Roster);
+      stamp(m.teamOne?.player2Roster);
+      stamp(m.teamTwo?.player1Roster);
+      stamp(m.teamTwo?.player2Roster);
+    });
+    (t.categories ?? []).forEach((cat: any) =>
+      (cat.registrations ?? []).forEach((reg: any) => {
+        stamp(reg.roster);
+        stamp(reg.team?.player1Roster);
+        stamp(reg.team?.player2Roster);
+      }),
+    );
   }
 
   async create(clubId: string, data: any, createdBy: string) {
@@ -401,8 +484,12 @@ export class TournamentsService {
    * haven't yet registered. Only players with active memberships in the
    * tournament's own club are targeted (home-club first rule).
    * Idempotent: duplicate calls skip already-notified players.
+   *
+   * `customMessage` (optional): if provided, used as the push body. If absent,
+   * falls back to the default "Las inscripciones para {name} están abiertas"
+   * copy that the mobile app already knows about.
    */
-  async notifyOpen(tournamentId: string) {
+  async notifyOpen(tournamentId: string, customMessage?: string) {
     const tournament = await this.ensureExists(tournamentId);
     if (tournament.status !== 'REGISTRATION_OPEN') {
       throw new BadRequestException('Set tournament status to REGISTRATION_OPEN first');
@@ -446,7 +533,8 @@ export class TournamentsService {
     await this.notifications.sendBulkWithData(
       targetUserIds,
       `¡Inscripciones abiertas: ${tournament.name}!`,
-      `Las inscripciones para ${tournament.name} están abiertas. Toca para inscribirte ahora.`,
+      customMessage?.trim() ||
+        `Las inscripciones para ${tournament.name} están abiertas. Toca para inscribirte ahora.`,
       { type: 'TOURNAMENT_OPEN', tournamentId: tournament.id },
       'GENERAL',
     );
@@ -500,6 +588,9 @@ export class TournamentsService {
 
     await this.assertTournamentAccess(tournament, actor);
 
+    // Stamp memberships for client-side player classification (SOCIO/CASUAL/EXTERNO).
+    await this.stampClubMemberships(tournament);
+
     const participants = tournament.registrations.map(registration => {
       if (registration.team) {
         const team = registration.team;
@@ -508,6 +599,7 @@ export class TournamentsService {
           rosterId: null,
           teamId: team.id,
           memberRosterIds: [team.player1RosterId, team.player2RosterId],
+          memberRosters: [team.player1Roster, team.player2Roster],
           name: this.teamName(team),
         };
       }
@@ -516,6 +608,7 @@ export class TournamentsService {
         rosterId: registration.rosterId,
         teamId: null,
         memberRosterIds: registration.rosterId ? [registration.rosterId] : [],
+        roster: registration.roster,
         name: this.rosterName(registration.roster),
       };
     });
@@ -554,29 +647,37 @@ export class TournamentsService {
       const playerOne = match.teamOne
         ? {
             name: this.teamName(match.teamOne),
+            type: 'TEAM',
             rosterId: null,
             teamId: match.teamOne.id,
             memberRosterIds: [match.teamOne.player1RosterId, match.teamOne.player2RosterId],
+            memberRosters: [match.teamOne.player1Roster, match.teamOne.player2Roster],
           }
         : {
             name: this.rosterName(match.playerOneRoster),
+            type: 'PLAYER',
             rosterId: match.playerOneRosterId,
             teamId: null,
             memberRosterIds: match.playerOneRosterId ? [match.playerOneRosterId] : [],
+            roster: match.playerOneRoster,
           };
 
       const playerTwo = match.teamTwo
         ? {
             name: this.teamName(match.teamTwo),
+            type: 'TEAM',
             rosterId: null,
             teamId: match.teamTwo.id,
             memberRosterIds: [match.teamTwo.player1RosterId, match.teamTwo.player2RosterId],
+            memberRosters: [match.teamTwo.player1Roster, match.teamTwo.player2Roster],
           }
         : {
             name: this.rosterName(match.playerTwoRoster),
+            type: 'PLAYER',
             rosterId: match.playerTwoRosterId,
             teamId: null,
             memberRosterIds: match.playerTwoRosterId ? [match.playerTwoRosterId] : [],
+            roster: match.playerTwoRoster,
           };
 
       grouped.get(key)!.matches.push({

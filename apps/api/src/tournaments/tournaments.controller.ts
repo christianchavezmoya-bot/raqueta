@@ -148,8 +148,8 @@ export class TournamentsController {
   @Post('tournaments/:id/notify-open')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Notify all unregistered home-club players that registration is open' })
-  notifyOpen(@Param('id') id: string) {
-    return this.tournamentsService.notifyOpen(id);
+  notifyOpen(@Param('id') id: string, @Body() body: { message?: string } | undefined) {
+    return this.tournamentsService.notifyOpen(id, body?.message);
   }
 
   // ─── Imports (Part B) ────────────────────────────────────────────────────
