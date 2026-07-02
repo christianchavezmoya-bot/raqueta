@@ -32,8 +32,14 @@ export class RosterController {
 
   @Get()
   @ApiOperation({ summary: 'List all roster entries for a club (linked/unlinked status visible)' })
-  listRoster(@Param('clubId') clubId: string, @CurrentUser() actor: ActingUser) {
-    return this.rosterService.listRoster(clubId, actor);
+  listRoster(
+    @Param('clubId') clubId: string,
+    @CurrentUser() actor: ActingUser,
+    @Query('includeArchived') includeArchived?: string,
+  ) {
+    return this.rosterService.listRoster(clubId, actor, {
+      includeArchived: includeArchived === 'true',
+    });
   }
 
   @Post('import')
@@ -57,6 +63,26 @@ export class RosterController {
     @CurrentUser() actor: ActingUser,
   ) {
     return this.rosterService.patchEntry(clubId, rosterId, dto, actor);
+  }
+
+  @Patch(':rosterId/archive')
+  @ApiOperation({ summary: 'Soft-archive a roster entry without deleting historical data' })
+  archiveEntry(
+    @Param('clubId') clubId: string,
+    @Param('rosterId') rosterId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.rosterService.archiveEntry(clubId, rosterId, actor);
+  }
+
+  @Patch(':rosterId/restore')
+  @ApiOperation({ summary: 'Restore a previously archived roster entry' })
+  restoreEntry(
+    @Param('clubId') clubId: string,
+    @Param('rosterId') rosterId: string,
+    @CurrentUser() actor: ActingUser,
+  ) {
+    return this.rosterService.restoreEntry(clubId, rosterId, actor);
   }
 
   @Post(':rosterId/withdraw')

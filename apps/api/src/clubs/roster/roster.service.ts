@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as XLSX from 'xlsx';
-import { ClubMatchResultSource, Prisma } from '@prisma/client';
+import {
+  ClubMatchResultSource,
+  MembershipRequestStatus,
+  MembershipStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActingUser, assertClubScope } from '../../common/utils/club-scope';
 import { validateAndNormalizeRut } from '../../common/utils/rut';
@@ -48,21 +53,40 @@ const DEFAULT_BONUS_TYPES = [
   { key: 'PENALTY',  label: 'Penalización (default)',  points: -10 }, // configurable per club
 ] as const;
 
+const ARCHIVE_BLOCK_MESSAGE =
+  'Este jugador tiene una membresía activa. Cancela la membresía antes de archivar.';
+
+const ARCHIVE_LINKED_WARNING =
+  'Este jugador tiene cuenta en la app. Será archivado del club pero mantendrá su cuenta.';
+
+const NON_ARCHIVABLE_MEMBERSHIP_STATUSES = new Set<MembershipStatus>([
+  'ACTIVE',
+  'SUSPENDED',
+  'PENDING',
+]);
+
+const MEMBERSHIP_PRIORITY: Record<MembershipStatus, number> = {
+  ACTIVE: 0,
+  SUSPENDED: 1,
+  PENDING: 2,
+  EXPIRED: 3,
+  CANCELLED: 4,
+};
+
 @Injectable()
 export class RosterService {
   constructor(private prisma: PrismaService) {}
 
   // ─── LIST ────────────────────────────────────────────────────────────────────
 
-  async listRoster(clubId: string, actor: ActingUser) {
+  async listRoster(clubId: string, actor: ActingUser, options: { includeArchived?: boolean } = {}) {
     await this.assertScope(clubId, actor);
     const entries = await this.prisma.clubPlayerRoster.findMany({
-      where: { clubId },
-      include: {
-        linkedPlayerProfile: {
-          include: { user: { select: { email: true, phone: true } } },
-        },
+      where: {
+        clubId,
+        ...(options.includeArchived ? {} : { deletedAt: null }),
       },
+      include: this.rosterInclude(clubId),
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
 
@@ -107,6 +131,7 @@ export class RosterService {
                 suburb:      row.suburb,
                 postcode:    row.postcode,
                 city:        row.city,
+                deletedAt:   null,
               },
             });
             updated++;
@@ -214,10 +239,48 @@ export class RosterService {
     const updated = await this.prisma.clubPlayerRoster.update({
       where: { id: entry.id },
       data: updateData,
-      include: { linkedPlayerProfile: { include: { user: { select: { email: true, phone: true } } } } },
+      include: this.rosterInclude(clubId),
     });
 
     return this.formatEntry(updated);
+  }
+
+  async archiveEntry(clubId: string, rosterId: string, actor: ActingUser) {
+    await this.assertScope(clubId, actor);
+    const entry = await this.findEntry(clubId, rosterId, {
+      includeArchived: true,
+      include: this.rosterInclude(clubId),
+    });
+
+    const blockingMembership = this.pickBlockingMembership(entry.memberships ?? []);
+    if (blockingMembership) {
+      throw new BadRequestException(ARCHIVE_BLOCK_MESSAGE);
+    }
+
+    const archived = await this.prisma.clubPlayerRoster.update({
+      where: { id: entry.id },
+      data: { deletedAt: entry.deletedAt ?? new Date() },
+      include: this.rosterInclude(clubId),
+    });
+
+    return {
+      entry: this.formatEntry(archived),
+      warning: archived.linkedPlayerProfileId ? ARCHIVE_LINKED_WARNING : null,
+    };
+  }
+
+  async restoreEntry(clubId: string, rosterId: string, actor: ActingUser) {
+    await this.assertScope(clubId, actor);
+    const entry = await this.findEntry(clubId, rosterId, { includeArchived: true });
+    const restored = await this.prisma.clubPlayerRoster.update({
+      where: { id: entry.id },
+      data: { deletedAt: null },
+      include: this.rosterInclude(clubId),
+    });
+
+    return {
+      entry: this.formatEntry(restored),
+    };
   }
 
   // ─── LINKING (Stage 15: name+DOB identity, not RUT) ───────────────────────
@@ -252,6 +315,7 @@ export class RosterService {
         firstName:       profile.firstName,
         lastName:        profile.lastName,
         dateOfBirth:     profile.dateOfBirth,
+        deletedAt:       null,
         linkedPlayerProfileId: null,
       },
       include: { club: { select: { id: true, name: true } } },
@@ -446,16 +510,86 @@ export class RosterService {
     await assertClubScope(actor, clubId, this.prisma);
   }
 
-  private async findEntry(clubId: string, rosterId: string) {
+  private async findEntry(
+    clubId: string,
+    rosterId: string,
+    options: {
+      includeArchived?: boolean;
+      include?: Prisma.ClubPlayerRosterInclude;
+    } = {},
+  ) {
     const entry = await this.prisma.clubPlayerRoster.findFirst({
-      where: { id: rosterId, clubId },
+      where: {
+        id: rosterId,
+        clubId,
+        ...(options.includeArchived ? {} : { deletedAt: null }),
+      },
+      include: options.include,
     });
     if (!entry) throw new NotFoundException('Roster entry not found');
     return entry;
   }
 
+  private rosterInclude(clubId: string) {
+    return {
+      linkedPlayerProfile: {
+        include: {
+          user: {
+            select: {
+              email: true,
+              phone: true,
+              membershipRequests: {
+                where: {
+                  clubId,
+                  status: MembershipRequestStatus.PENDING,
+                },
+                select: {
+                  id: true,
+                  status: true,
+                  requestedAt: true,
+                  plan: {
+                    select: {
+                      id: true,
+                      name: true,
+                      billingPeriod: true,
+                    },
+                  },
+                },
+                orderBy: { requestedAt: 'desc' },
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+      memberships: {
+        include: { plan: true },
+        orderBy: [{ createdAt: 'desc' }, { startDate: 'desc' }],
+      },
+    } satisfies Prisma.ClubPlayerRosterInclude;
+  }
+
+  private pickBlockingMembership(memberships: Array<{ status: MembershipStatus }>) {
+    return memberships.find(membership => NON_ARCHIVABLE_MEMBERSHIP_STATUSES.has(membership.status));
+  }
+
+  private pickCurrentMembership(memberships: any[] = []) {
+    if (!memberships.length) return null;
+    return [...memberships].sort((left, right) => {
+      const priority = MEMBERSHIP_PRIORITY[left.status] - MEMBERSHIP_PRIORITY[right.status];
+      if (priority !== 0) return priority;
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    })[0];
+  }
+
   private formatEntry(entry: any) {
     const linked = entry.linkedPlayerProfile;
+    const pendingRequest = linked?.user?.membershipRequests?.[0] ?? null;
+    const currentMembership = this.pickCurrentMembership(entry.memberships);
+    const membershipStatus =
+      currentMembership?.status
+      ?? (pendingRequest ? MembershipStatus.PENDING : null);
+
     return {
       id:          entry.id,
       clubId:      entry.clubId,
@@ -464,7 +598,35 @@ export class RosterService {
       fullName:    `${entry.firstName} ${entry.lastName}`,
       dateOfBirth: entry.dateOfBirth,
       rut:         entry.rut,
+      phone:       entry.phone,
       division:    entry.division,
+      deletedAt:   entry.deletedAt,
+      archived:    !!entry.deletedAt,
+      membershipStatus,
+      currentMembership: currentMembership
+        ? {
+            id: currentMembership.id,
+            planId: currentMembership.planId,
+            planName: currentMembership.plan?.name ?? null,
+            billingPeriod: currentMembership.plan?.billingPeriod ?? null,
+            status: currentMembership.status,
+            startDate: currentMembership.startDate,
+            endDate: currentMembership.endDate,
+            lastPaymentDate: currentMembership.lastPaymentDate,
+            nextPaymentDue: currentMembership.nextPaymentDue,
+            paymentNotes: currentMembership.paymentNotes,
+          }
+        : null,
+      pendingMembershipRequest: pendingRequest
+        ? {
+            id: pendingRequest.id,
+            status: pendingRequest.status,
+            requestedAt: pendingRequest.requestedAt,
+            planId: pendingRequest.plan?.id ?? null,
+            planName: pendingRequest.plan?.name ?? null,
+            billingPeriod: pendingRequest.plan?.billingPeriod ?? null,
+          }
+        : null,
       // Imported contact fields — permanent audit trail
       imported: {
         phone:    entry.phone,

@@ -5,7 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MembershipRequestStatus, MembershipStatus, Prisma } from '@prisma/client';
+import {
+  BillingPeriod,
+  MembershipRequestStatus,
+  MembershipStatus,
+  Prisma,
+  Role,
+} from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, assertClubScope } from '../common/utils/club-scope';
@@ -48,6 +54,15 @@ type ApproveMembershipRequestInput = {
 
 type DenyMembershipRequestInput = {
   reason?: string;
+};
+
+type UpdateMembershipInput = Partial<AssignMembershipInput> & {
+  status?: MembershipStatus;
+  lastPaymentDate?: string | Date | null;
+  nextPaymentDue?: string | Date | null;
+  paymentNotes?: string | null;
+  statusReason?: string;
+  markPaid?: boolean;
 };
 
 @Injectable()
@@ -144,6 +159,7 @@ export class MembershipsService {
         status: 'ACTIVE',
         startDate,
         endDate,
+        nextPaymentDue: this.computeNextPaymentDue(plan.billingPeriod, startDate),
       },
       include: this.membershipInclude(),
     });
@@ -159,35 +175,82 @@ export class MembershipsService {
     return this.serializeMembership(membership);
   }
 
-  async updateMembership(membershipId: string, data: Partial<AssignMembershipInput> & { status?: MembershipStatus }, actor: ActingUser) {
+  async updateMembership(membershipId: string, data: UpdateMembershipInput, actor: ActingUser) {
     const membership = await this.prisma.membership.findUnique({
       where: { id: membershipId },
-      include: { plan: true },
+      include: this.membershipInclude(),
     });
     if (!membership) throw new NotFoundException('Membership not found');
 
     await assertClubScope(actor, membership.clubId, this.prisma);
 
+    let nextPlan = membership.plan;
     let planId = membership.planId;
     if (data.planId && data.planId !== membership.planId) {
-      const nextPlan = await this.prisma.membershipPlan.findUnique({ where: { id: data.planId } });
-      if (!nextPlan) throw new NotFoundException('Plan not found');
-      if (nextPlan.clubId !== membership.clubId) {
+      const foundPlan = await this.prisma.membershipPlan.findUnique({ where: { id: data.planId } });
+      if (!foundPlan) throw new NotFoundException('Plan not found');
+      if (foundPlan.clubId !== membership.clubId) {
         throw new BadRequestException('Plan does not belong to the same club');
       }
-      planId = nextPlan.id;
+      nextPlan = foundPlan;
+      planId = foundPlan.id;
+    }
+
+    const previousStatus = membership.status;
+    const nextStatus = data.status ?? membership.status;
+    if (
+      previousStatus === 'CANCELLED'
+      && nextStatus === 'ACTIVE'
+      && actor.role !== Role.CLUB_ADMIN
+      && actor.role !== Role.SUPER_ADMIN
+    ) {
+      throw new ForbiddenException('Solo un administrador del club puede reactivar una membresía cancelada');
+    }
+
+    let paymentNotes = this.optionalText(data.paymentNotes);
+    if (nextStatus === 'SUSPENDED' && previousStatus !== 'SUSPENDED') {
+      const reason = this.requireText(
+        data.statusReason ?? data.paymentNotes,
+        'Suspension reason',
+      );
+      paymentNotes = reason;
+    }
+
+    let lastPaymentDate = this.parseOptionalDate(data.lastPaymentDate);
+    let nextPaymentDue = this.parseOptionalDate(data.nextPaymentDue);
+
+    if (data.markPaid) {
+      const today = new Date();
+      lastPaymentDate = today;
+      nextPaymentDue = this.computeNextPaymentDue(nextPlan.billingPeriod, today);
+    } else if (previousStatus === 'SUSPENDED' && nextStatus === 'ACTIVE') {
+      const today = new Date();
+      lastPaymentDate = today;
+      nextPaymentDue = this.computeNextPaymentDue(nextPlan.billingPeriod, today);
+      if (data.paymentNotes === undefined) paymentNotes = null;
     }
 
     const updated = await this.prisma.membership.update({
       where: { id: membershipId },
       data: {
         planId,
-        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.status !== undefined ? { status: nextStatus } : {}),
         ...(data.startDate !== undefined ? { startDate: this.parseDate(data.startDate, membership.startDate) } : {}),
         ...(data.endDate !== undefined ? { endDate: this.parseOptionalDate(data.endDate) } : {}),
+        ...(data.lastPaymentDate !== undefined || data.markPaid || (previousStatus === 'SUSPENDED' && nextStatus === 'ACTIVE')
+          ? { lastPaymentDate }
+          : {}),
+        ...(data.nextPaymentDue !== undefined || data.markPaid || (previousStatus === 'SUSPENDED' && nextStatus === 'ACTIVE')
+          ? { nextPaymentDue }
+          : {}),
+        ...(data.paymentNotes !== undefined || data.statusReason !== undefined || (previousStatus === 'SUSPENDED' && nextStatus === 'ACTIVE')
+          ? { paymentNotes }
+          : {}),
       },
       include: this.membershipInclude(),
     });
+
+    await this.notifyMembershipStatusChange(membership, updated);
 
     return this.serializeMembership(updated);
   }
@@ -349,6 +412,10 @@ export class MembershipsService {
         status: 'ACTIVE',
         startDate: this.parseDate(body.startDate, new Date()),
         endDate: this.parseOptionalDate(body.endDate),
+        nextPaymentDue: this.computeNextPaymentDue(
+          request.plan.billingPeriod,
+          this.parseDate(body.startDate, new Date()),
+        ),
       },
       include: this.membershipInclude(),
     });
@@ -515,7 +582,7 @@ export class MembershipsService {
         },
       });
       if (!roster) throw new NotFoundException('Roster entry not found');
-      return roster;
+      return this.restoreRosterIfArchived(roster);
     }
 
     if (data.userId || data.playerProfileId) {
@@ -548,7 +615,7 @@ export class MembershipsService {
         },
       },
     });
-    if (existingLinked) return existingLinked;
+    if (existingLinked) return this.restoreRosterIfArchived(existingLinked);
 
     if (profile.rut) {
       const byRut = await this.prisma.clubPlayerRoster.findFirst({
@@ -565,15 +632,19 @@ export class MembershipsService {
       }
 
       if (byRut) {
-        return this.prisma.clubPlayerRoster.update({
+        const updated = await this.prisma.clubPlayerRoster.update({
           where: { id: byRut.id },
-          data: { linkedPlayerProfileId: profile.id },
+          data: {
+            linkedPlayerProfileId: profile.id,
+            deletedAt: null,
+          },
           include: {
             linkedPlayerProfile: {
               include: { user: { select: { id: true, email: true, phone: true } } },
             },
           },
         });
+        return updated;
       }
     }
 
@@ -620,6 +691,7 @@ export class MembershipsService {
             phone: this.optionalText(data.phone),
             address: this.optionalText(data.address),
             city: this.optionalText(data.city),
+            deletedAt: null,
           },
           include: {
             linkedPlayerProfile: {
@@ -650,9 +722,69 @@ export class MembershipsService {
 
   private async cancelExistingActiveMembership(clubId: string, rosterId: string) {
     await this.prisma.membership.updateMany({
-      where: { clubId, rosterId, status: 'ACTIVE' },
+      where: {
+        clubId,
+        rosterId,
+        status: { in: ['ACTIVE', 'SUSPENDED', 'PENDING'] },
+      },
       data: { status: 'CANCELLED' },
     });
+  }
+
+  private async restoreRosterIfArchived<T extends { id: string; deletedAt?: Date | null }>(roster: T) {
+    if (!roster.deletedAt) return roster;
+    return this.prisma.clubPlayerRoster.update({
+      where: { id: roster.id },
+      data: { deletedAt: null },
+      include: {
+        linkedPlayerProfile: {
+          include: { user: { select: { id: true, email: true, phone: true } } },
+        },
+      },
+    }) as Promise<any>;
+  }
+
+  private computeNextPaymentDue(
+    billingPeriod: BillingPeriod,
+    baseDate: Date,
+  ) {
+    if (billingPeriod === 'LIFETIME') return null;
+    const days =
+      billingPeriod === 'MONTHLY'
+        ? 30
+        : billingPeriod === 'QUARTERLY'
+          ? 90
+          : 365;
+    const dueDate = new Date(baseDate);
+    dueDate.setDate(dueDate.getDate() + days);
+    return dueDate;
+  }
+
+  private async notifyMembershipStatusChange(previousMembership: any, updatedMembership: any) {
+    const previousStatus = previousMembership.status as MembershipStatus;
+    const nextStatus = updatedMembership.status as MembershipStatus;
+    if (previousStatus === nextStatus) return;
+
+    const linkedUserId = updatedMembership.roster?.linkedPlayerProfile?.userId;
+    if (!linkedUserId) return;
+
+    const clubName = updatedMembership.club?.name ?? 'tu club';
+    if (nextStatus === 'SUSPENDED') {
+      await this.notifications.send(
+        linkedUserId,
+        'Membresía suspendida',
+        `Tu membresía en ${clubName} ha sido suspendida. Contacta al club para regularizar tu situación.`,
+      );
+      return;
+    }
+
+    if (nextStatus === 'ACTIVE') {
+      await this.notifications.send(
+        linkedUserId,
+        'Membresía reactivada',
+        `Tu membresía en ${clubName} ha sido reactivada. ¡Bienvenido de vuelta!`,
+      );
+    }
   }
 
   private splitDisplayName(displayName: string, email: string): [string, string] {

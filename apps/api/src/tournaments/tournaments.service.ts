@@ -420,7 +420,16 @@ export class TournamentsService {
       where: { clubId, linkedPlayerProfileId: profile.id },
     });
     const rosterId = existingRoster
-      ? existingRoster.id
+      ? (
+          existingRoster.deletedAt
+            ? (
+                await this.prisma.clubPlayerRoster.update({
+                  where: { id: existingRoster.id },
+                  data: { deletedAt: null },
+                })
+              ).id
+            : existingRoster.id
+        )
       : (
           await this.prisma.clubPlayerRoster.create({
             data: {

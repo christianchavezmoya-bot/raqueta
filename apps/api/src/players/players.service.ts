@@ -379,7 +379,7 @@ export class PlayersService {
     if (!profile.homeClubId) return { club: null, entry: null };
 
     const rosterEntry = await this.prisma.clubPlayerRoster.findFirst({
-      where: { clubId: profile.homeClubId, linkedPlayerProfileId: profile.id },
+      where: { clubId: profile.homeClubId, linkedPlayerProfileId: profile.id, deletedAt: null },
     });
     if (!rosterEntry) return { club: profile.homeClub, entry: null };
 
@@ -1066,6 +1066,7 @@ export class PlayersService {
       include: {
         homeClub: { include: { profile: true } },
         rosterLinks: {
+          where: { deletedAt: null },
           include: { club: { include: { profile: true } } },
           orderBy: { createdAt: 'asc' },
         },
@@ -1141,6 +1142,9 @@ export class PlayersService {
       include: { club: true },
     });
     if (!entry) throw new NotFoundException('Roster entry not found');
+    if (entry.deletedAt) {
+      throw new BadRequestException('Esta fila del roster ya fue archivada por el club');
+    }
 
     if (
       profile.firstName !== entry.firstName ||
@@ -1324,4 +1328,3 @@ function sameDate(a: Date | null | undefined, b: Date | null | undefined): boole
     a.getUTCDate() === b.getUTCDate()
   );
 }
-

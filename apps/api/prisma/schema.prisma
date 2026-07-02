@@ -72,6 +72,7 @@ enum PaymentStatus {
 
 enum MembershipStatus {
   ACTIVE
+  SUSPENDED
   EXPIRED
   CANCELLED
   PENDING
@@ -582,16 +583,19 @@ model MembershipPlan {
 }
 
 model Membership {
-  id          String           @id @default(uuid())
-  rosterId    String           @map("roster_id")
-  clubId      String           @map("club_id")
-  planId      String           @map("plan_id")
-  status      MembershipStatus @default(ACTIVE)
-  startDate   DateTime         @map("start_date")
-  endDate     DateTime?        @map("end_date")
-  renewalType String?          @map("renewal_type")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id              String           @id @default(uuid())
+  rosterId        String           @map("roster_id")
+  clubId          String           @map("club_id")
+  planId          String           @map("plan_id")
+  status          MembershipStatus @default(ACTIVE)
+  startDate       DateTime         @map("start_date")
+  endDate         DateTime?        @map("end_date")
+  renewalType     String?          @map("renewal_type")
+  lastPaymentDate DateTime?        @map("last_payment_date")
+  nextPaymentDue  DateTime?        @map("next_payment_due")
+  paymentNotes    String?          @map("payment_notes")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   roster   ClubPlayerRoster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
   club     Club             @relation(fields: [clubId], references: [id])
@@ -897,6 +901,7 @@ model ClubPlayerRoster {
   city                  String?
   division              String?
   linkedPlayerProfileId String?   @map("linked_player_profile_id")
+  deletedAt             DateTime? @map("deleted_at")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
