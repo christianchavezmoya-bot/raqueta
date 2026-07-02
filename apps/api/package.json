@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "prisma migrate deploy",
+    "prestart": "prisma migrate deploy",
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main",
@@ -10,6 +12,7 @@
     "lint": "eslint src --ext .ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "ts-node prisma/seed.ts",
     "db:push": "prisma db push",
     "db:reset": "prisma migrate reset --force"
